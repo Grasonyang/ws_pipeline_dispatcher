@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -193,6 +194,18 @@ static void test_buffer(void)
     CHECK(pipeline_buffer_append_str(NULL, "x") == -1);
     CHECK(pipeline_buffer_append_str(&buf, NULL) == -1);
     CHECK(pipeline_buffer_append_mem(&buf, NULL, 1) == -1);
+
+    pipeline_buffer_t huge = {0};
+    huge.len = (size_t)-8;
+    huge.cap = huge.len;
+    CHECK(pipeline_buffer_reserve(&huge, 16) == -1);
+
+    pipeline_buffer_t nul = {0};
+    CHECK(pipeline_buffer_append_mem(&nul, NULL, 0) == 0);
+    CHECK(nul.len == 0);
+    CHECK(nul.data != NULL);
+    CHECK(nul.data[0] == '\0');
+    pipeline_buffer_free(&nul);
 }
 
 int main(void)

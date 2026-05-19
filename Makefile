@@ -26,7 +26,7 @@ APPLETS   := pipeline_dispatcher stream_merge log_parse clip_store
 BINS      := $(addprefix $(BUILD_DIR)/,$(APPLETS))
 
 TEST_BINS    := $(BUILD_DIR)/test_libpipeline $(BUILD_DIR)/test_stream_logger
-TEST_SCRIPTS := tests/test_log_parse.sh
+TEST_SCRIPTS := tests/test_log_parse.sh tests/test_clip_store.sh tests/test_stream_merge.sh tests/test_pipeline_dispatcher.sh
 
 .PHONY: all clean test smoke
 
@@ -51,9 +51,15 @@ $(BUILD_DIR)/test_libpipeline: tests/test_libpipeline.c $(LIB_OBJS) | $(BUILD_DI
 $(BUILD_DIR)/test_stream_logger: tests/test_stream_logger.c $(LIB_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(LIB_OBJS) $(LDFLAGS) $(LDLIBS) -o $@
 
-test: $(TEST_BINS) $(BUILD_DIR)/log_parse
+test: $(TEST_BINS) $(BINS)
 	@for test_bin in $(TEST_BINS); do $$test_bin || exit $$?; done
-	@for test_script in $(TEST_SCRIPTS); do LOG_PARSE=$(BUILD_DIR)/log_parse sh $$test_script || exit $$?; done
+	@for test_script in $(TEST_SCRIPTS); do \
+		LOG_PARSE=$(CURDIR)/$(BUILD_DIR)/log_parse \
+		CLIP_STORE=$(CURDIR)/$(BUILD_DIR)/clip_store \
+		STREAM_MERGE=$(CURDIR)/$(BUILD_DIR)/stream_merge \
+		PIPELINE_DISPATCHER=$(CURDIR)/$(BUILD_DIR)/pipeline_dispatcher \
+		sh $$test_script || exit $$?; \
+	done
 
 # End-to-end smoke: run dispatcher with skeleton stubs from build/.
 smoke: all
