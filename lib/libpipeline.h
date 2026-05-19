@@ -5,6 +5,7 @@
  * Shared low-level helpers used by all applets:
  *   - inotify directory/file watching
  *   - monotonic time
+ *   - dynamic byte buffer
  *   - sentinel filename detection
  *
  * See .docs/libpipeline-v1.0.md for the full specification.
@@ -18,6 +19,12 @@
 
 // Sentinel filename created by the upstream writer when a session is complete.
 #define PIPELINE_SENTINEL_NAME ".pipeline_end"
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} pipeline_buffer_t;
 
 /**
  * @brief Open an inotify fd that watches a directory for completed writes.
@@ -55,6 +62,62 @@ int pipeline_open_file_watch(const char *file_path, int *watch_descriptor);
  * @return monotonic timestamp in milliseconds, or 0 if unavailable.
  */
 int64_t pipeline_get_monotonic_time_ms(void);
+
+/**
+ * @brief Release a dynamic buffer and reset its fields.
+ *
+ * It is safe to call this with a zero-initialized buffer.
+ *
+ * @param buf buffer to release.
+ */
+void pipeline_buffer_free(pipeline_buffer_t *buf);
+
+/**
+ * @brief Ensure a dynamic buffer has room for extra bytes plus trailing NUL.
+ *
+ * The buffer grows exponentially to reduce realloc calls. Existing data is
+ * preserved on success.
+ *
+ * @param buf buffer to grow.
+ * @param extra number of additional bytes the caller wants to append.
+ * @return 0 on success, -1 on overflow or allocation failure.
+ */
+int pipeline_buffer_reserve(pipeline_buffer_t *buf, size_t extra);
+
+/**
+ * @brief Append one character to a dynamic buffer.
+ *
+ * The buffer remains NUL-terminated after a successful append.
+ *
+ * @param buf destination buffer.
+ * @param c character to append.
+ * @return 0 on success, -1 on allocation failure.
+ */
+int pipeline_buffer_append_char(pipeline_buffer_t *buf, char c);
+
+/**
+ * @brief Append a NUL-terminated string to a dynamic buffer.
+ *
+ * The buffer remains NUL-terminated after a successful append.
+ *
+ * @param buf destination buffer.
+ * @param s string to append.
+ * @return 0 on success, -1 on invalid args or allocation failure.
+ */
+int pipeline_buffer_append_str(pipeline_buffer_t *buf, const char *s);
+
+/**
+ * @brief Append raw bytes to a dynamic buffer.
+ *
+ * The buffer remains NUL-terminated after a successful append, even when the
+ * appended bytes are not text.
+ *
+ * @param buf destination buffer.
+ * @param src source memory to append.
+ * @param len number of bytes to append.
+ * @return 0 on success, -1 on invalid args or allocation failure.
+ */
+int pipeline_buffer_append_mem(pipeline_buffer_t *buf, const void *src, size_t len);
 
 /**
  * @brief Check whether a filename/path refers to the pipeline sentinel.

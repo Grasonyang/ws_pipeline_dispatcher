@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/inotify.h>
 #include <time.h>
@@ -75,6 +76,76 @@ int64_t pipeline_get_monotonic_time_ms(void) {
     }
     /* Convert seconds plus nanoseconds to a monotonic millisecond counter. */
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+void pipeline_buffer_free(pipeline_buffer_t *buf) {
+    if (buf == NULL) {
+        return;
+    }
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    buf->cap = 0;
+}
+
+int pipeline_buffer_reserve(pipeline_buffer_t *buf, size_t extra) {
+    if (buf == NULL || buf->len > SIZE_MAX - extra - 1) {
+        return -1;
+    }
+
+    size_t need = buf->len + extra + 1;
+    if (need <= buf->cap) {
+        return 0;
+    }
+
+    size_t next = buf->cap == 0 ? 128 : buf->cap;
+    while (next < need) {
+        if (next > SIZE_MAX / 2) {
+            next = need;
+            break;
+        }
+        next *= 2;
+    }
+
+    char *data = realloc(buf->data, next);
+    if (data == NULL) {
+        return -1;
+    }
+
+    buf->data = data;
+    buf->cap = next;
+    return 0;
+}
+
+int pipeline_buffer_append_char(pipeline_buffer_t *buf, char c) {
+    if (pipeline_buffer_reserve(buf, 1) != 0) {
+        return -1;
+    }
+    buf->data[buf->len++] = c;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+int pipeline_buffer_append_mem(pipeline_buffer_t *buf, const void *src, size_t len) {
+    if (buf == NULL || (src == NULL && len > 0)) {
+        return -1;
+    }
+    if (pipeline_buffer_reserve(buf, len) != 0) {
+        return -1;
+    }
+    if (len > 0) {
+        memcpy(buf->data + buf->len, src, len);
+        buf->len += len;
+        buf->data[buf->len] = '\0';
+    }
+    return 0;
+}
+
+int pipeline_buffer_append_str(pipeline_buffer_t *buf, const char *s) {
+    if (s == NULL) {
+        return -1;
+    }
+    return pipeline_buffer_append_mem(buf, s, strlen(s));
 }
 
 int pipeline_path_is_sentinel(const char *filename) {

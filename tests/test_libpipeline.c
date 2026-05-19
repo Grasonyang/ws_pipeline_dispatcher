@@ -170,12 +170,38 @@ static void test_open_file_watch(void)
     rmdir(dir);
 }
 
+static void test_buffer(void)
+{
+    pipeline_buffer_t buf = {0};
+
+    CHECK(pipeline_buffer_append_char(&buf, 'a') == 0);
+    CHECK(pipeline_buffer_append_str(&buf, "bc") == 0);
+    CHECK(pipeline_buffer_append_mem(&buf, "def", 3) == 0);
+    CHECK(buf.len == 6);
+    CHECK(buf.cap >= buf.len + 1);
+    CHECK(strcmp(buf.data, "abcdef") == 0);
+
+    CHECK(pipeline_buffer_reserve(&buf, 1024) == 0);
+    CHECK(buf.cap >= buf.len + 1024 + 1);
+    CHECK(strcmp(buf.data, "abcdef") == 0);
+
+    pipeline_buffer_free(&buf);
+    CHECK(buf.data == NULL);
+    CHECK(buf.len == 0);
+    CHECK(buf.cap == 0);
+
+    CHECK(pipeline_buffer_append_str(NULL, "x") == -1);
+    CHECK(pipeline_buffer_append_str(&buf, NULL) == -1);
+    CHECK(pipeline_buffer_append_mem(&buf, NULL, 1) == -1);
+}
+
 int main(void)
 {
     test_sentinel();
     test_now_ms();
     test_open_dir_watch();
     test_open_file_watch();
+    test_buffer();
     if (failures == 0) {
         printf("OK: all libpipeline tests passed\n");
         return 0;
