@@ -31,7 +31,7 @@ stream_merge | log_parse --filter type=clip | clip_store
 | 提取共用邏輯為內部函式庫 | `libpipeline`、`stream_logger` |
 | 遵循 stdout/stderr 與 CLI 慣例 | applet stdout 保持資料流，diagnostic logs 走 stderr |
 
-完整 compliance matrix 會在 v2.0 文件對齊階段補上。
+完整對照表見 [`.docs/compliance-matrix.md`](.docs/compliance-matrix.md)。
 
 ## Pipeline 架構
 
@@ -163,6 +163,7 @@ v2 會優先補齊作業交付需要的文件、收斂與證據：
 ## 文件
 
 - Repo-local implementation docs：[`./.docs/Home.md`](.docs/Home.md)
+- Assignment compliance matrix：[`./.docs/compliance-matrix.md`](.docs/compliance-matrix.md)
 - Internal spec：[`./.docs/full_spec.md`](.docs/full_spec.md)
 - Cross-repo integration contract：Linear integration docs
 

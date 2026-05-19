@@ -16,13 +16,16 @@
 
 ## How To Read
 
-1. 先看 `full_spec`，了解本 repo 的內部邊界。
-2. 修改某個 applet 前，看對應頁面。
-3. 跨 repo 行為不要在這裡新增完整規格，請更新 Linear。
+1. 先看 `README.md`，了解作業主軸與快速執行方式。
+2. 再看 `compliance-matrix`，確認作業要求、目前狀態與後續 milestone。
+3. 接著看 `full_spec`，了解本 repo 的內部邊界。
+4. 修改某個 applet 前，看對應頁面。
+5. 跨 repo 行為不要在這裡新增完整規格，請更新 Linear。
 
 ## Pages
 
 - `full_spec`：本 repo 的內部工作總覽。
+- `compliance-matrix`：作業 B + 方向三要求對照表。
 - `pipeline_dispatcher-v1.0`：entry point、fork/exec、exit code。
 - `stream_merge-v1.0`：讀取 growing blob、sentinel、clip JSON Lines。
 - `log_parse-v1.0`：regex-based 結構化日誌解析、JSON/CSV 輸出、integration filter。
