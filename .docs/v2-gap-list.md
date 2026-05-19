@@ -17,7 +17,7 @@ v2.1 的目標是讓目前可跑的 C pipeline 更穩、更一致，並把已知
 | `clip_store --ttl 0` 目前代表立即過期，但 milestone 期望可表達不過期 | TTL 語意會影響 demo、測試與使用者理解 | GRA-21 | Yes |
 | `pipeline_dispatcher` child exec path / failure propagation 仍可更明確 | final demo 需要能說明 fork/exec/waitpid、exit code 與 failure behavior | GRA-22 | Yes |
 | JSON/key parsing helper 分散在 `log_parse` 與 `clip_store` | 重複 ad-hoc parsing 會讓後續修 edge case 變難 | GRA-23 | Optional but useful |
-| `stream_merge` 尚未達到提案書中的核心切割能力：5s 主動切割、chunk 序號 gap FSM、partial clip、idle timeout、CRC32/去重、meta events extraction | 提案書把 `stream-merge` 定義為核心 applet；目前 baseline 只做 growing file JSON object framing 和 sentinel drain，足以跑 pipeline，但不足以支撐原提案敘事 | GRA-24 | Yes |
+| `stream_merge` 尚未達到提案書中的核心切割能力：5s 主動切割、chunk 序號 gap FSM、partial clip、idle timeout、CRC32/去重、meta events extraction | 提案書把 `stream-merge` 定義為核心 applet；但正確 contract 下 `.bin` 應是 binary video bytes，current baseline 卻把 growing file 當 JSON object blob 處理，這不只是功能不足，也是 input model mismatch | GRA-24 | Yes |
 | `clip_store --gc` 目前是 in-place rewrite + `fsync()`，不是 tmp file + rename | docs 已誠實標示，但 storage engine 若要更像可防守的作業成果，需要 crash-safety story | GRA-25 | Strongly recommended |
 
 ## v2.2 Scope
@@ -73,6 +73,14 @@ Out of scope unless integration requires it:
 
 原提案書把 `stream-merge` 定義為核心 applet，目標不只是把 JSON object 從 growing file 裡切出來，而是要處理即時影音 chunk pipeline 的控制語意。
 
+正確 contract 應是：
+
+- `{session_id}.bin` 保存 binary video bytes。
+- `{session_id}.meta.jsonl` 保存 chunk metadata，例如 sequence、offset/length、timestamp/duration、CRC、events。
+- `stream_merge` 依 metadata sidecar 從 `.bin` 決定 clip 邊界，再輸出 clip metadata JSONL。
+
+因此目前 baseline 的主要問題不只是少做功能，而是把 `.bin` 誤當成 JSON payload source。
+
 目前已完成：
 
 - 使用 inotify/poll 監聽 growing file 與 `.pipeline_end`。
@@ -81,9 +89,12 @@ Out of scope unless integration requires it:
 - 只輸出 `type=clip` records，讓下游 `log_parse --filter type=clip` 與 `clip_store` 可串接。
 - sentinel 出現後 drain final bytes 並退出。
 
+這些「已完成」只描述 current baseline，不代表 target architecture 正確。
+
 目前未完成，應納入 GRA-24 或後續 v2.1 拆分：
 
 - 5 秒主動切割 complete clip。
+- 以 metadata sidecar 驅動 binary `.bin` 切割，而不是從 `.bin` 解析 JSON。
 - chunk sequence gap detection。
 - `Collecting -> EmitComplete -> EmitPartial -> Reset -> RejectLate` 類 FSM。
 - gap 發生時輸出 partial clip 並重設 buffer。

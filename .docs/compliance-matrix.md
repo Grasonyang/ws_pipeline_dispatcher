@@ -26,7 +26,7 @@
 | 支援 JSON/CSV structured output | Done | `log_parse` | README and `.docs/log_parse-v1.0.md`; shell tests cover JSON and CSV output | None for course baseline |
 | 支援欄位選取與 regex capture mapping | Done | `log_parse --fields` | `.docs/log_parse-v1.0.md`; `tests/test_log_parse.sh` | Document unsupported regex features if discovered during GRA-16 |
 | 支援串流資料過濾 | Done | `log_parse --filter key=value` | Integration mode keeps `type=clip` JSON Lines; tests cover filter behavior | v2.1 may expand filter contract only if required by demo |
-| 支援串流資料轉換 | Partial | `stream_merge`, `log_parse` | `stream_merge` frames growing input into JSON Lines; `log_parse` converts regex logs to JSON/CSV | v2.1 should clarify binary/video payload boundary and final record framing contract |
+| 支援串流資料轉換 | Partial | `stream_merge`, `log_parse` | `stream_merge` currently frames a test-oriented growing blob into JSON Lines; `log_parse` converts regex logs to JSON/CSV | v2.1 must realign `stream_merge` with the intended contract where `.bin` holds binary video bytes and sidecar metadata drives clip cutting |
 | 支援 growing file / append-only stream | Done | `applets/stream_merge.c`, `lib/libpipeline.*` | inotify/poll behavior documented in `.docs/stream_merge-v1.0.md`; `tests/test_stream_merge.sh` | v2.1 can add more edge-case tests for long sessions if needed |
 | 使用 sentinel 表示 stream 結束並 drain final bytes | Done | `stream_merge`, `libpipeline` | `.pipeline_end` behavior documented; stream_merge tests cover drain behavior | None for current baseline |
 | 方向三：輕量級資料儲存引擎 | Done | `applets/clip_store.c` | file-backed index at `--db`; `tests/test_clip_store.sh` | v2.1 should keep docs honest about supported CRUD surface |
@@ -59,3 +59,4 @@ v2.1/v2.2 的單一追蹤入口是 `.docs/v2-gap-list.md`，Linear milestone iss
 - man/help pages and compatibility matrix are not complete yet; they should be scoped to GRA-19 and v2.2 rather than silently implied as done.
 - benchmark evidence is not present yet; README correctly routes it to v2.2.
 - applet docs need a dedicated pass in GRA-16 to ensure they describe implemented behavior without overstating future crash-safety or CRUD features.
+- `stream_merge` current baseline still treats the growing input as JSON-object-like test data; v2.1 must move it back to binary `.bin` plus metadata-sidecar semantics.

@@ -1,5 +1,12 @@
 /*
- * stream_merge.c -- growing blob reader for clip JSON objects.
+ * stream_merge.c -- current baseline for a growing session blob reader.
+ *
+ * IMPORTANT:
+ * The intended contract is that {session_id}.bin contains binary video bytes,
+ * with clip boundaries driven by sidecar metadata. This file does NOT yet
+ * implement that design. The current baseline only drains a growing file and
+ * extracts complete JSON objects that look like clip metadata so the v1
+ * pipeline can run end-to-end in tests.
  */
 
 #include "libpipeline.h"
@@ -61,6 +68,7 @@ static void consume_inotify_fd(int fd, int *saw_sentinel)
 
 static int looks_like_clip(const char *json, size_t len)
 {
+    /* Temporary heuristic for fixture-style JSON input, not the target .bin contract. */
     const char *needle = "\"type\"";
     const char *clip = "\"clip\"";
     for (size_t i = 0; i + strlen(needle) <= len; ++i) {
@@ -77,6 +85,11 @@ static int looks_like_clip(const char *json, size_t len)
 
 static int emit_complete_objects(pipeline_buffer_t *buf)
 {
+    /*
+     * Current baseline: brace-balanced object extraction from a test blob.
+     * Future stream_merge should cut binary data using metadata sidecars
+     * instead of parsing JSON-like content from .bin.
+     */
     size_t start = 0;
     int have_start = 0;
     int depth = 0;

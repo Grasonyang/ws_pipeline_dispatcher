@@ -41,7 +41,7 @@ pipeline_dispatcher
 每個 process 的角色：
 
 - `pipeline_dispatcher`：建立 pipe、spawn child、回收 exit status。
-- `stream_merge`：從 growing file 讀新資料，等到 sentinel 出現後 drain 最後 bytes，輸出 clip-oriented JSON Lines。
+- `stream_merge`：正確設計下應從 growing binary stream 搭配 metadata sidecar 產生 clip metadata JSON Lines；目前 baseline implementation 仍有 fixture-driven mismatch，詳見 `stream_merge-v1.0` 與 `v2-gap-list`。
 - `log_parse`：對上游 structured records 做 parse / filter / reformat。
 - `clip_store`：把 clip records 寫入 file-backed index，並支援 TTL / GC。
 
@@ -51,8 +51,8 @@ pipeline_dispatcher
 
 1. 上層先建立 `/tmp/stream/{session_id}/` 與對應資料檔。
 2. `pipeline_dispatcher` 以 CLI 參數啟動三個 applet。
-3. `stream_merge` 持續讀 `{session_id}.bin` 的新增內容。
-4. `stream_merge` 把辨識出的 clip records 輸出到 stdout。
+3. `stream_merge` 持續讀 `{session_id}.bin` 的新增內容，並讀 sidecar metadata 來判斷 chunk 邊界、gap、duration 與 events。
+4. `stream_merge` 輸出 clip metadata records 到 stdout。
 5. `log_parse` 從 stdin 讀取 records，保留 `type=clip` 或做格式轉換。
 6. `clip_store` 從 stdin 讀取 clip JSON Lines，寫入 `db_path`。
 7. `.pipeline_end` 出現後，`stream_merge` drain 剩餘 bytes 並結束；下游跟著 EOF 收束。
@@ -87,7 +87,9 @@ pipeline_dispatcher <session_id> <src_dir> <db_path> <ttl_seconds>
     .pipeline_end
 ```
 
-`{session_id}.bin` 是 append-only growing blob。`stream_merge` 以 tail-read 方式讀取新增 bytes。
+`{session_id}.bin` 是 append-only growing binary blob，內容應是 video bytes，不是 JSON payload。`stream_merge` 以 tail-read 方式讀取新增 bytes。
+
+`{session_id}.meta.jsonl` 應提供 chunk metadata，例如 sequence、offset/length、timestamp/duration、CRC 或 events。沒有這類 sidecar metadata，`stream_merge` 無法可靠完成 5s 切割、gap detection、partial clip 與 event extraction。
 
 `.pipeline_end` 表示上層已完成寫入。它不是啟動 pipeline 的 trigger。
 
@@ -102,6 +104,7 @@ pipeline_dispatcher <session_id> <src_dir> <db_path> <ttl_seconds>
   - `waitpid()` 收斂 child exit status。
 - `stream_merge`
   - 監聽 growing file 追加內容。
+  - 依 metadata sidecar 解讀 chunk 邊界與 clip 切割條件。
   - 感知 sentinel，決定何時 drain 並正常退出。
   - 保持 stdout 為 structured records，不輸出診斷文字。
 - `log_parse`
