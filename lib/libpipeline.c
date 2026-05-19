@@ -89,7 +89,8 @@ void pipeline_buffer_free(pipeline_buffer_t *buf) {
 }
 
 int pipeline_buffer_reserve(pipeline_buffer_t *buf, size_t extra) {
-    if (buf == NULL || buf->len > SIZE_MAX - extra - 1) {
+    if (buf == NULL || extra > SIZE_MAX - buf->len ||
+        buf->len + extra > SIZE_MAX - 1) {
         return -1;
     }
 
@@ -136,8 +137,8 @@ int pipeline_buffer_append_mem(pipeline_buffer_t *buf, const void *src, size_t l
     if (len > 0) {
         memcpy(buf->data + buf->len, src, len);
         buf->len += len;
-        buf->data[buf->len] = '\0';
     }
+    buf->data[buf->len] = '\0';
     return 0;
 }
 

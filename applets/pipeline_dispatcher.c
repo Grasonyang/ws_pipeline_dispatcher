@@ -22,6 +22,7 @@
 #include "stream_logger.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,9 +36,23 @@
 /* Resolve sibling binaries living next to argv[0]. v1 simplification: assume
  * cwd contains the build outputs. A future pipeline_safe_spawn() helper in
  * libpipeline can take over locating these. */
-static const char *BIN_STREAM_MERGE = "./stream_merge";
-static const char *BIN_LOG_PARSE    = "./log_parse";
-static const char *BIN_CLIP_STORE   = "./clip_store";
+static int sibling_path(char *out, size_t out_size, const char *argv0, const char *name)
+{
+    const char *slash = strrchr(argv0, '/');
+    if (slash == NULL) {
+        int n = snprintf(out, out_size, "./%s", name);
+        return n >= 0 && (size_t)n < out_size ? 0 : -1;
+    }
+
+    size_t dir_len = (size_t)(slash - argv0);
+    if (dir_len + 1 + strlen(name) + 1 > out_size) {
+        return -1;
+    }
+    memcpy(out, argv0, dir_len);
+    out[dir_len] = '/';
+    strcpy(out + dir_len + 1, name);
+    return 0;
+}
 
 static pid_t spawn_child(const char *bin, char *const argv[],
                          int stdin_fd, int stdout_fd,
@@ -108,6 +123,16 @@ int main(int argc, char *argv[])
     LOG_INFO("starting pipeline session=%s src=%s db=%s ttl=%s",
              session_id, src_dir, db_path, ttl_str);
 
+    char bin_stream_merge[PATH_MAX];
+    char bin_log_parse[PATH_MAX];
+    char bin_clip_store[PATH_MAX];
+    if (sibling_path(bin_stream_merge, sizeof(bin_stream_merge), argv[0], "stream_merge") != 0 ||
+        sibling_path(bin_log_parse, sizeof(bin_log_parse), argv[0], "log_parse") != 0 ||
+        sibling_path(bin_clip_store, sizeof(bin_clip_store), argv[0], "clip_store") != 0) {
+        LOG_ERROR("failed to resolve applet paths");
+        return -1;
+    }
+
     int pipe1[2] = {-1, -1};
     int pipe2[2] = {-1, -1};
     if (pipe(pipe1) < 0) {
@@ -122,18 +147,18 @@ int main(int argc, char *argv[])
 
     /* Build argv for each applet. */
     char *merge_argv[] = {
-        (char *)BIN_STREAM_MERGE,
+        bin_stream_merge,
         "--src",     (char *)src_dir,
         "--session", (char *)session_id,
         NULL
     };
     char *parse_argv[] = {
-        (char *)BIN_LOG_PARSE,
+        bin_log_parse,
         "--filter", "type=clip",
         NULL
     };
     char *store_argv[] = {
-        (char *)BIN_CLIP_STORE,
+        bin_clip_store,
         "--db",  (char *)db_path,
         "--ttl", (char *)ttl_str,
         NULL
@@ -143,21 +168,21 @@ int main(int argc, char *argv[])
 
     /* stream_merge: stdout → pipe1[WRITE], stdin = /dev/null (inotify driven). */
     pid_t merge_pid = spawn_child(
-        BIN_STREAM_MERGE, merge_argv,
+        bin_stream_merge, merge_argv,
         STDIN_FILENO, pipe1[WRITE_END],
         all_pipes, 4);
     if (merge_pid < 0) goto fail;
 
     /* log_parse: stdin ← pipe1[READ], stdout → pipe2[WRITE]. */
     pid_t parse_pid = spawn_child(
-        BIN_LOG_PARSE, parse_argv,
+        bin_log_parse, parse_argv,
         pipe1[READ_END], pipe2[WRITE_END],
         all_pipes, 4);
     if (parse_pid < 0) goto fail;
 
     /* clip_store: stdin ← pipe2[READ], stdout = inherited (debug). */
     pid_t store_pid = spawn_child(
-        BIN_CLIP_STORE, store_argv,
+        bin_clip_store, store_argv,
         pipe2[READ_END], STDOUT_FILENO,
         all_pipes, 4);
     if (store_pid < 0) goto fail;
