@@ -42,4 +42,17 @@ wait
 "$CLIP_STORE" --db "$DB" --gc
 check_eq "concurrent writes line count" "7" "$(wc -l <"$DB" | tr -d ' ')"
 
+# ── TTL expiry: GC must remove rows with expire_at <= now ──────────────
+
+printf '{"type":"clip","session_id":"sess_exp","ts":1,"path":"/tmp/exp.mp4"}\n' |
+    "$CLIP_STORE" --db "$DB" --ttl 1
+
+sleep 2
+
+"$CLIP_STORE" --db "$DB" --gc
+
+check_eq "ttl expired row removed" \
+    "" \
+    "$(grep '^sess_exp:1' "$DB" || true)"
+
 printf 'OK: all clip_store tests passed\n'
