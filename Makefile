@@ -7,9 +7,10 @@
 #   make clean      — remove build artifacts
 #
 # Layout:
-#   lib/     shared code (libpipeline, stream_logger)
+#   lib/     shared code (libpipeline, stream_logger, pipeline_json)
 #   applets/ one .c per executable (pipeline_dispatcher + 3 stubs)
 #   tests/   unit tests
+# 
 #   build/   build outputs (created at build time)
 
 CC        ?= cc
@@ -19,8 +20,10 @@ LDFLAGS   ?=
 LDLIBS    ?=
 
 BUILD_DIR := build
-LIB_SRCS  := lib/libpipeline.c lib/stream_logger.c
-LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/stream_logger.o
+# 【修改 1】：這裡加入了 lib/pipeline_json.c
+LIB_SRCS  := lib/libpipeline.c lib/stream_logger.c lib/pipeline_json.c
+# 【修改 2】：這裡加入了 $(BUILD_DIR)/pipeline_json.o
+LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/stream_logger.o $(BUILD_DIR)/pipeline_json.o
 
 APPLETS   := pipeline_dispatcher stream_merge log_parse clip_store
 BINS      := $(addprefix $(BUILD_DIR)/,$(APPLETS))
@@ -39,6 +42,10 @@ $(BUILD_DIR)/libpipeline.o: lib/libpipeline.c lib/libpipeline.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/stream_logger.o: lib/stream_logger.c lib/stream_logger.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+# 【修改 3】：加入 pipeline_json.o 的編譯規則
+$(BUILD_DIR)/pipeline_json.o: lib/pipeline_json.c lib/pipeline_json.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 # Each applet links against the shared lib objects.

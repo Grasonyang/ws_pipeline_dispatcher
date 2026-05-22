@@ -5,17 +5,12 @@
  * session-level {session_id}.bin buffer, then emits clip metadata JSON
  * Lines to stdout based on a fixed time window and continuity rules.
  *
- * .bin is opened to verify existence; actual byte content is not read
- * in v2.1 (CRC verification and binary clip extraction are future work).
- *
- * Future work (not in v2.1):
- *   - CRC32 chunk verification
- *   - Physical clip file extraction
- *   - Events extraction from meta records
- *   - Late-packet / out-of-order handling
+ * [v2.1 Upgrade]: Now actually extracts binary data using pread() 
+ * and writes physical .bin clip files before emitting JSON metadata.
  */
 
 #include "libpipeline.h"
+#include "pipeline_json.h"
 #include "stream_logger.h"
 
 #include <errno.h>
@@ -44,32 +39,13 @@ typedef struct {
     int      valid;
 } meta_record_t;
 
-/*
- * Minimal field extractor: find "key": <value> in a JSON line without a
- * full parser.  Returns pointer to start of value token, NULL on miss.
- */
-static const char *find_field(const char *line, const char *key)
-{
-    char needle[64];
-    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-    if (n < 0 || (size_t)n >= sizeof(needle)) return NULL;
-    const char *p = strstr(line, needle);
-    if (!p) return NULL;
-    p += (size_t)n;
-    while (*p == ' ' || *p == '\t') ++p;
-    if (*p != ':') return NULL;
-    ++p;
-    while (*p == ' ' || *p == '\t') ++p;
-    return p;
-}
-
 static int parse_meta_record(const char *line, size_t len, meta_record_t *out)
 {
     (void)len;
     memset(out, 0, sizeof(*out));
 
     /* kind */
-    const char *p = find_field(line, "kind");
+    const char *p = pipeline_json_find_field(line, "kind");
     if (!p || *p != '"') return -1;
     ++p;
     size_t ki = 0;
@@ -77,27 +53,27 @@ static int parse_meta_record(const char *line, size_t len, meta_record_t *out)
         out->kind[ki++] = *p++;
     out->kind[ki] = '\0';
 
-    /* seq */
-    p = find_field(line, "seq");
+
+    p = pipeline_json_find_field(line, "sequence");
     if (!p) return -1;
     char *end;
     out->seq = (uint64_t)strtoull(p, &end, 10);
     if (end == p) return -1;
 
     /* offset */
-    p = find_field(line, "offset");
+    p = pipeline_json_find_field(line, "offset");
     if (!p) return -1;
     out->offset = (uint64_t)strtoull(p, &end, 10);
     if (end == p) return -1;
 
     /* length */
-    p = find_field(line, "length");
+    p = pipeline_json_find_field(line, "length");
     if (!p) return -1;
     out->length = (uint64_t)strtoull(p, &end, 10);
     if (end == p) return -1;
 
     /* ts_ms */
-    p = find_field(line, "ts_ms");
+    p = pipeline_json_find_field(line, "ts_ms");
     if (!p) return -1;
     out->ts_ms = (int64_t)strtoll(p, &end, 10);
     if (end == p) return -1;
@@ -109,14 +85,14 @@ static int parse_meta_record(const char *line, size_t len, meta_record_t *out)
 /* ── clip FSM state ──────────────────────────────────────────────────── */
 
 typedef struct {
-    int      active;              /* 1 if we have at least one chunk */
+    int      active;
     int64_t  start_ts_ms;
     int64_t  end_ts_ms;
     uint64_t start_offset;
     uint64_t total_length;
     uint64_t next_seq;
     uint64_t next_offset;
-    int64_t  last_chunk_wall_ms;  /* monotonic ms when last chunk arrived */
+    int64_t  last_chunk_wall_ms;
 } clip_state_t;
 
 static void clip_reset(clip_state_t *s)
@@ -124,20 +100,65 @@ static void clip_reset(clip_state_t *s)
     memset(s, 0, sizeof(*s));
 }
 
+/* v2.1 核心：傳入 bin_fd 進行實體檔案抽取 */
 static int emit_clip(const clip_state_t *s, const char *src,
-                     const char *session, int complete)
+                     const char *session, int complete, int bin_fd)
 {
     if (!s->active) return 0;
 
     long ts_sec = (long)(s->start_ts_ms / 1000);
-
-    /* synthetic path: points into the session .bin at the clip byte range */
     char path[PATH_MAX];
     int n = snprintf(path, sizeof(path), "%s/%s_%ld.bin", src, session, ts_sec);
     if (n < 0 || (size_t)n >= sizeof(path)) {
         LOG_ERROR("path too long for session %s", session);
         return -1;
     }
+
+    /* ── v2.1 Binary Extraction Logic (Pread) ── */
+    if (s->total_length > 0) {
+        int out_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (out_fd < 0) {
+            LOG_ERROR("failed to create clip file %s: %s", path, strerror(errno));
+            return -1;
+        }
+
+        char buf[8192];
+        uint64_t remain = s->total_length;
+        uint64_t current_offset = s->start_offset;
+
+        while (remain > 0) {
+            size_t to_read = remain < sizeof(buf) ? (size_t)remain : sizeof(buf);
+            ssize_t nread = pread(bin_fd, buf, to_read, (off_t)current_offset);
+            if (nread < 0) {
+                if (errno == EINTR) continue;
+                LOG_ERROR("failed to read bin file at offset %" PRIu64 ": %s", current_offset, strerror(errno));
+                close(out_fd);
+                return -1;
+            }
+            if (nread == 0) {
+                LOG_WARN("unexpected EOF in bin file at offset %" PRIu64, current_offset);
+                break; 
+            }
+
+            char *wptr = buf;
+            ssize_t nwrite = nread;
+            while (nwrite > 0) {
+                ssize_t nw = write(out_fd, wptr, (size_t)nwrite);
+                if (nw < 0) {
+                    if (errno == EINTR) continue;
+                    LOG_ERROR("failed to write to clip file %s: %s", path, strerror(errno));
+                    close(out_fd);
+                    return -1;
+                }
+                wptr += nw;
+                nwrite -= nw;
+            }
+            remain -= (uint64_t)nread;
+            current_offset += (uint64_t)nread;
+        }
+        close(out_fd);
+    }
+    /* ────────────────────────────────── */
 
     int rc = printf(
         "{\"type\":\"clip\","
@@ -157,19 +178,13 @@ static int emit_clip(const clip_state_t *s, const char *src,
 
 /* ── FSM transitions ─────────────────────────────────────────────────── */
 
-/*
- * Process one validated meta record against the current clip state.
- * Emits a clip to stdout when a boundary is crossed.
- * Returns 0 on success, -1 on I/O error.
- */
 static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
                                 const char *src, const char *session,
-                                int64_t clip_ms)
+                                int64_t clip_ms, int bin_fd)
 {
     int64_t now_ms = pipeline_get_monotonic_time_ms();
 
     if (!s->active) {
-        /* SM_IDLE → SM_COLLECTING */
         s->active           = 1;
         s->start_ts_ms      = rec->ts_ms;
         s->end_ts_ms        = rec->ts_ms;
@@ -181,19 +196,16 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         return 0;
     }
 
-    /* SM_COLLECTING: check continuity */
     int seq_ok    = (rec->seq    == s->next_seq);
     int offset_ok = (rec->offset == s->next_offset);
 
     if (!seq_ok || !offset_ok) {
-        /* continuity break → emit partial + reset + start fresh */
         LOG_WARN("continuity break seq=%" PRIu64 " (expected %" PRIu64
                  ") offset=%" PRIu64 " (expected %" PRIu64 ")",
                  rec->seq, s->next_seq, rec->offset, s->next_offset);
-        if (emit_clip(s, src, session, 0) != 0) return -1;
+        if (emit_clip(s, src, session, 0, bin_fd) != 0) return -1;
         clip_reset(s);
 
-        /* start new clip with the triggering record */
         s->active           = 1;
         s->start_ts_ms      = rec->ts_ms;
         s->end_ts_ms        = rec->ts_ms;
@@ -205,13 +217,10 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         return 0;
     }
 
-    /* continuity ok — check time window */
     int64_t span = rec->ts_ms - s->start_ts_ms;
     if (span >= clip_ms) {
-        /* OLD clip emitted at accumulated state, NOT including triggering chunk */
-        if (emit_clip(s, src, session, 1) != 0) return -1;
+        if (emit_clip(s, src, session, 1, bin_fd) != 0) return -1;
         clip_reset(s);
-        /* NEW clip starts with the triggering chunk */
         s->active             = 1;
         s->start_ts_ms        = rec->ts_ms;
         s->end_ts_ms          = rec->ts_ms;
@@ -223,7 +232,6 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         return 0;
     }
 
-    /* accumulate */
     s->end_ts_ms      = rec->ts_ms;
     s->total_length  += rec->length;
     s->next_seq       = rec->seq + 1;
@@ -232,14 +240,9 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
     return 0;
 }
 
-/*
- * Read new bytes from meta_fd into meta_buf, split on newlines, and
- * call process_meta_record for each complete line.
- * Returns 0 on success, -1 on I/O or emit error.
- */
 static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
                       clip_state_t *s, const char *src, const char *session,
-                      int64_t clip_ms)
+                      int64_t clip_ms, int bin_fd)
 {
     char chunk[4096];
     for (;;) {
@@ -254,13 +257,11 @@ static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
             return -1;
     }
 
-    /* process complete lines */
     for (;;) {
         char *nl = memchr(meta_buf->data, '\n', meta_buf->len);
         if (!nl) break;
         size_t line_len = (size_t)(nl - meta_buf->data);
 
-        /* NUL-terminate the line in place for parsing */
         char saved = *nl;
         *nl = '\0';
 
@@ -269,12 +270,11 @@ static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
             if (parse_meta_record(meta_buf->data, line_len, &rec) == 0
                     && rec.valid
                     && strcmp(rec.kind, "data") == 0) {
-                if (process_meta_record(&rec, s, src, session, clip_ms) != 0) {
+                if (process_meta_record(&rec, s, src, session, clip_ms, bin_fd) != 0) {
                     *nl = saved;
                     return -1;
                 }
             } else if (line_len > 0) {
-                /* non-data or malformed: log and skip */
                 LOG_WARN("skipping meta line: %.80s", meta_buf->data);
             }
         }
@@ -289,33 +289,20 @@ static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
     return 0;
 }
 
-/*
- * Check wall-clock idle timeout: if active and no chunk has arrived
- * within idle_ms, emit partial clip and reset.
- * Returns 0 on success, -1 on emit error.
- */
 static int check_idle(clip_state_t *s, int64_t idle_ms,
-                      const char *src, const char *session)
+                      const char *src, const char *session, int bin_fd)
 {
     if (!s->active) return 0;
     int64_t elapsed = pipeline_get_monotonic_time_ms() - s->last_chunk_wall_ms;
     if (elapsed >= idle_ms) {
         LOG_INFO("idle timeout after %" PRId64 "ms, emitting partial clip", elapsed);
-        if (emit_clip(s, src, session, 0) != 0) return -1;
+        if (emit_clip(s, src, session, 0, bin_fd) != 0) return -1;
         clip_reset(s);
     }
     return 0;
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
-
-/*static void usage(const char *prog)
-{
-    fprintf(stderr,
-            "usage: %s --src <src_dir> --session <session_id>"
-            " [--clip-secs <n>] [--idle-secs <n>]\n",
-            prog);
-}*/
 
 static int path_join(char *out, size_t sz, const char *dir, const char *name)
 {
@@ -351,6 +338,7 @@ static void consume_inotify(int fd, int *saw_sentinel)
         }
     }
 }
+
 static void print_usage(FILE *stream, const char *prog_name) {
     fprintf(stream, "Usage: %s [OPTIONS] <session_id> <src_dir>\n\n", prog_name);
     fprintf(stream, "Description:\n");
@@ -361,32 +349,40 @@ static void print_usage(FILE *stream, const char *prog_name) {
     fprintf(stream, "      --idle-secs <n>    Idle timeout before emitting partial clip (default: 2.0)\n");
     fprintf(stream, "  -h, --help             Show this help message and exit\n");
 }
+
 /* ── main ────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
 {
     stream_logger_set_tag("stream_merge");
 
-   // const char *src      = NULL;
-    //const char *session  = NULL;
     int64_t clip_ms      = DEFAULT_CLIP_MS;
     int64_t idle_ms      = DEFAULT_IDLE_MS;
-
+    const char *src      = NULL;   // <--- 補上這行
+    const char *session  = NULL;
     int opt;
     static struct option long_options[] = {
         {"clip-secs", required_argument, 0, 1000},
         {"idle-secs", required_argument, 0, 1001},
+        {"src",       required_argument, 0, 1002}, // 補上這個
+        {"session",   required_argument, 0, 1003}, // 補上這個
         {"help",      no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     
     while ((opt = getopt_long(argc, argv, "h", long_options, NULL)) != -1) {
         switch (opt) {
-            case 1000: // --clip-secs
+            case 1000:
                 clip_ms = (int64_t)(atof(optarg) * 1000.0);
                 break;
-            case 1001: // --idle-secs
+            case 1001:
                 idle_ms = (int64_t)(atof(optarg) * 1000.0);
+                break;
+            case 1002: 
+                src = optarg; 
+                break;       // 抓取 --src
+            case 1003: 
+                session = optarg; 
                 break;
             case 'h':
                 print_usage(stdout, argv[0]);
@@ -398,17 +394,24 @@ int main(int argc, char *argv[])
                 exit(EXIT_FAILURE);
         }
     }
-
-   if (optind + 2 > argc) {
+    if (!session && optind < argc) session = argv[optind++];
+    if (!src && optind < argc) src = argv[optind++];
+    if (!session || !src) {
         fprintf(stderr, "Error: Missing required arguments <session_id> and/or <src_dir>\n\n");
         print_usage(stderr, argv[0]);
         exit(EXIT_FAILURE);
     }
+    //if (!session || !src) return 1;
+    /*if (optind + 2 > argc) {
+        fprintf(stderr, "Error: Missing required arguments <session_id> and/or <src_dir>\n\n");
+        print_usage(stderr, argv[0]);
+        exit(EXIT_FAILURE);
+    }*/
 
-    const char *session = argv[optind];
-    const char *src     = argv[optind + 1];
+    //const char *session = argv[optind];
+    //const char *src     = argv[optind + 1];
 
-    /* open .bin (verify existence; not read in v2.1) */
+    /* open .bin */
     char bin_path[PATH_MAX], meta_path[PATH_MAX];
     {
         char bin_name[PATH_MAX], meta_name[PATH_MAX];
@@ -427,7 +430,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Open dir_fd FIRST so we can poll for meta file appearance if needed */
     int dir_wd = -1;
     int dir_fd = pipeline_open_dir_watch(src, &dir_wd);
     if (dir_fd < 0) {
@@ -460,7 +462,7 @@ int main(int argc, char *argv[])
             if (prc > 0) {
                 char ibuf[4096];
                 ssize_t nr = read(dir_fd, ibuf, sizeof(ibuf));
-                (void)nr;  /* drain to unblock next poll; result intentionally ignored */
+                (void)nr;
             }
             meta_fd = open(meta_path, O_RDONLY);
         }
@@ -489,8 +491,8 @@ int main(int argc, char *argv[])
     int saw_sentinel = sentinel_exists(src);
     int rc = 0;
 
-    /* initial drain of any meta already written */
-    if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms) != 0)
+    /* Pass bin_fd through the call chain */
+    if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms, bin_fd) != 0)
         rc = 1;
 
     while (rc == 0 && !saw_sentinel) {
@@ -505,7 +507,7 @@ int main(int argc, char *argv[])
         struct pollfd pfds[3] = {
             { .fd = meta_wfd, .events = POLLIN },
             { .fd = dir_fd,   .events = POLLIN },
-            { .fd = -1,       .events = 0      },  /* reserved */
+            { .fd = -1,       .events = 0      },
         };
         int prc = poll(pfds, 2, (int)timeout);
         if (prc < 0) {
@@ -518,7 +520,7 @@ int main(int argc, char *argv[])
         if (pfds[0].revents & POLLIN) {
             int ignored = 0;
             consume_inotify(meta_wfd, &ignored);
-            if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms) != 0) {
+            if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms, bin_fd) != 0) {
                 rc = 1;
                 break;
             }
@@ -529,21 +531,19 @@ int main(int argc, char *argv[])
         if (sentinel_exists(src))
             saw_sentinel = 1;
 
-        if (check_idle(&clip, idle_ms, src, session) != 0) {
+        if (check_idle(&clip, idle_ms, src, session, bin_fd) != 0) {
             rc = 1;
             break;
         }
     }
 
-    /* final drain after sentinel */
     if (rc == 0) {
-        if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms) != 0)
+        if (drain_meta(meta_fd, &meta_buf, &clip, src, session, clip_ms, bin_fd) != 0)
             rc = 1;
     }
 
-    /* flush any remaining active clip */
     if (rc == 0 && clip.active) {
-        if (emit_clip(&clip, src, session, 1) != 0)
+        if (emit_clip(&clip, src, session, 1, bin_fd) != 0)
             rc = 1;
         clip_reset(&clip);
     }

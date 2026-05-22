@@ -1,8 +1,8 @@
 #include "libpipeline.h"
+#include "pipeline_json.h"
 #include "stream_logger.h"
 
 #include <regex.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,31 +42,6 @@ static void print_usage(FILE *stream, const char *prog_name) {
     fprintf(stream, "  -f, --filter <k=v>     Only emit JSON Lines where the key matches the value\n");
     fprintf(stream, "      --format <fmt>     Set output format (json|csv) (default: json)\n");
     fprintf(stream, "  -h, --help             Show this help message and exit\n");
-}
-
-static char *xstrndup(const char *src, size_t len) {
-    char *out = malloc(len + 1);
-    if (out == NULL) {
-        return NULL;
-    }
-    memcpy(out, src, len);
-    out[len] = '\0';
-    return out;
-}
-
-static void trim_line(char *line) {
-    char *start = line;
-    while (isspace((unsigned char)*start)) {
-        ++start;
-    }
-    if (start != line) {
-        memmove(line, start, strlen(start) + 1);
-    }
-
-    size_t len = strlen(line);
-    while (len > 0 && isspace((unsigned char)line[len - 1])) {
-        line[--len] = '\0';
-    }
 }
 
 static int parse_filter(char *arg, filter_t *filter) {
@@ -268,7 +243,7 @@ static int parse_regex_record(const char *line, regex_t *regex, record_t *record
             free(matches);
             return 1;
         }
-        record->values[i] = xstrndup(line + m.rm_so, (size_t)(m.rm_eo - m.rm_so));
+        record->values[i] = pipeline_strndup(line + m.rm_so, (size_t)(m.rm_eo - m.rm_so));
         if (record->values[i] == NULL) {
             free_record_values(record);
             free(matches);
@@ -282,78 +257,9 @@ static int parse_regex_record(const char *line, regex_t *regex, record_t *record
 
 /* JSON Lines filtering for integration mode. */
 
-static char *json_find_string_value(const char *line, const char *key)
-{
-    char needle[128];
-    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-    if (n < 0 || (size_t)n >= sizeof(needle)) {
-        return NULL;
-    }
-
-    const char *p = strstr(line, needle);
-    if (p == NULL) {
-        return NULL;
-    }
-    p += (size_t)n;
-    while (*p == ' ' || *p == '\t') {
-        ++p;
-    }
-    if (*p != ':') {
-        return NULL;
-    }
-    ++p;
-    while (*p == ' ' || *p == '\t') {
-        ++p;
-    }
-    if (*p != '"') {
-        return NULL;
-    }
-    ++p;
-
-    char *out = malloc(strlen(p) + 1);
-    if (out == NULL) {
-        return NULL;
-    }
-    size_t len = 0;
-    int escaped = 0;
-    for (; *p != '\0'; ++p) {
-        if (escaped) {
-            out[len++] = *p;
-            escaped = 0;
-        } else if (*p == '\\') {
-            escaped = 1;
-        } else if (*p == '"') {
-            out[len] = '\0';
-            return out;
-        } else {
-            out[len++] = *p;
-        }
-    }
-
-    free(out);
-    return NULL;
-}
-
-static int looks_like_json_object(const char *line)
-{
-    const char *start = line;
-    while (*start == ' ' || *start == '\t') {
-        ++start;
-    }
-    if (*start != '{') {
-        return 0;
-    }
-
-    const char *end = line + strlen(line);
-    while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
-        --end;
-    }
-    return end > start && end[-1] == '}';
-}
-
 static int process_json_line(const char *line, const filter_t *filter)
 {
-    if (!looks_like_json_object(line)) {
+    if (!pipeline_json_looks_like_object(line)) {
         return 1;
     }
 
@@ -362,7 +268,7 @@ static int process_json_line(const char *line, const filter_t *filter)
         return 0;
     }
 
-    char *value = json_find_string_value(line, filter->key);
+    char *value = pipeline_json_find_string_value(line, filter->key);
     if (value == NULL) {
         return 0;
     }
@@ -468,7 +374,7 @@ int main(int argc, char *argv[]) {
     char *line = NULL;
     size_t cap = 0;
     while (getline(&line, &cap, stdin) > 0) {
-        trim_line(line);
+        pipeline_trim_line(line);
 
         if (regex_mode) {
             int rc = parse_regex_record(line, &regex_state.regex, &regex_state.record);
