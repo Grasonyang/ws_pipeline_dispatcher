@@ -28,6 +28,7 @@
 #include <string.h>
 #include <sys/inotify.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #define DEFAULT_CLIP_MS  5000
 #define DEFAULT_IDLE_MS  2000
@@ -36,7 +37,7 @@
 
 typedef struct {
     char     kind[16];
-    uint64_t sequence;
+    uint64_t seq;
     uint64_t offset;
     uint64_t length;
     int64_t  ts_ms;
@@ -76,11 +77,11 @@ static int parse_meta_record(const char *line, size_t len, meta_record_t *out)
         out->kind[ki++] = *p++;
     out->kind[ki] = '\0';
 
-    /* sequence */
-    p = find_field(line, "sequence");
+    /* seq */
+    p = find_field(line, "seq");
     if (!p) return -1;
     char *end;
-    out->sequence = (uint64_t)strtoull(p, &end, 10);
+    out->seq = (uint64_t)strtoull(p, &end, 10);
     if (end == p) return -1;
 
     /* offset */
@@ -113,7 +114,7 @@ typedef struct {
     int64_t  end_ts_ms;
     uint64_t start_offset;
     uint64_t total_length;
-    uint64_t next_sequence;
+    uint64_t next_seq;
     uint64_t next_offset;
     int64_t  last_chunk_wall_ms;  /* monotonic ms when last chunk arrived */
 } clip_state_t;
@@ -174,21 +175,21 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         s->end_ts_ms        = rec->ts_ms;
         s->start_offset     = rec->offset;
         s->total_length     = rec->length;
-        s->next_sequence    = rec->sequence + 1;
+        s->next_seq         = rec->seq + 1;
         s->next_offset      = rec->offset + rec->length;
         s->last_chunk_wall_ms = now_ms;
         return 0;
     }
 
     /* SM_COLLECTING: check continuity */
-    int sequence_ok = (rec->sequence == s->next_sequence);
+    int seq_ok    = (rec->seq    == s->next_seq);
     int offset_ok = (rec->offset == s->next_offset);
 
-    if (!sequence_ok || !offset_ok) {
+    if (!seq_ok || !offset_ok) {
         /* continuity break → emit partial + reset + start fresh */
-        LOG_WARN("continuity break sequence=%" PRIu64 " (expected %" PRIu64
+        LOG_WARN("continuity break seq=%" PRIu64 " (expected %" PRIu64
                  ") offset=%" PRIu64 " (expected %" PRIu64 ")",
-                 rec->sequence, s->next_sequence, rec->offset, s->next_offset);
+                 rec->seq, s->next_seq, rec->offset, s->next_offset);
         if (emit_clip(s, src, session, 0) != 0) return -1;
         clip_reset(s);
 
@@ -198,7 +199,7 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         s->end_ts_ms        = rec->ts_ms;
         s->start_offset     = rec->offset;
         s->total_length     = rec->length;
-        s->next_sequence    = rec->sequence + 1;
+        s->next_seq         = rec->seq + 1;
         s->next_offset      = rec->offset + rec->length;
         s->last_chunk_wall_ms = now_ms;
         return 0;
@@ -216,7 +217,7 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
         s->end_ts_ms          = rec->ts_ms;
         s->start_offset       = rec->offset;
         s->total_length       = rec->length;
-        s->next_sequence      = rec->sequence + 1;
+        s->next_seq           = rec->seq + 1;
         s->next_offset        = rec->offset + rec->length;
         s->last_chunk_wall_ms = now_ms;
         return 0;
@@ -225,7 +226,7 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
     /* accumulate */
     s->end_ts_ms      = rec->ts_ms;
     s->total_length  += rec->length;
-    s->next_sequence  = rec->sequence + 1;
+    s->next_seq       = rec->seq + 1;
     s->next_offset    = rec->offset + rec->length;
     s->last_chunk_wall_ms = now_ms;
     return 0;
@@ -308,13 +309,13 @@ static int check_idle(clip_state_t *s, int64_t idle_ms,
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
-static void usage(const char *prog)
+/*static void usage(const char *prog)
 {
     fprintf(stderr,
             "usage: %s --src <src_dir> --session <session_id>"
             " [--clip-secs <n>] [--idle-secs <n>]\n",
             prog);
-}
+}*/
 
 static int path_join(char *out, size_t sz, const char *dir, const char *name)
 {
@@ -350,33 +351,62 @@ static void consume_inotify(int fd, int *saw_sentinel)
         }
     }
 }
-
+static void print_usage(FILE *stream, const char *prog_name) {
+    fprintf(stream, "Usage: %s [OPTIONS] <session_id> <src_dir>\n\n", prog_name);
+    fprintf(stream, "Description:\n");
+    fprintf(stream, "  Synchronizes and merges a growing binary stream with its metadata sidecar.\n");
+    fprintf(stream, "  Extracts structured byte ranges and emits valid JSON Lines to stdout.\n\n");
+    fprintf(stream, "Options:\n");
+    fprintf(stream, "      --clip-secs <n>    Target clip duration in seconds (default: 5.0)\n");
+    fprintf(stream, "      --idle-secs <n>    Idle timeout before emitting partial clip (default: 2.0)\n");
+    fprintf(stream, "  -h, --help             Show this help message and exit\n");
+}
 /* ── main ────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
 {
     stream_logger_set_tag("stream_merge");
 
-    const char *src      = NULL;
-    const char *session  = NULL;
+   // const char *src      = NULL;
+    //const char *session  = NULL;
     int64_t clip_ms      = DEFAULT_CLIP_MS;
     int64_t idle_ms      = DEFAULT_IDLE_MS;
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--src") == 0 && i + 1 < argc) {
-            src = argv[++i];
-        } else if (strcmp(argv[i], "--session") == 0 && i + 1 < argc) {
-            session = argv[++i];
-        } else if (strcmp(argv[i], "--clip-secs") == 0 && i + 1 < argc) {
-            clip_ms = (int64_t)(atof(argv[++i]) * 1000.0);
-        } else if (strcmp(argv[i], "--idle-secs") == 0 && i + 1 < argc) {
-            idle_ms = (int64_t)(atof(argv[++i]) * 1000.0);
-        } else {
-            usage(argv[0]);
-            return 1;
+    int opt;
+    static struct option long_options[] = {
+        {"clip-secs", required_argument, 0, 1000},
+        {"idle-secs", required_argument, 0, 1001},
+        {"help",      no_argument,       0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    while ((opt = getopt_long(argc, argv, "h", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 1000: // --clip-secs
+                clip_ms = (int64_t)(atof(optarg) * 1000.0);
+                break;
+            case 1001: // --idle-secs
+                idle_ms = (int64_t)(atof(optarg) * 1000.0);
+                break;
+            case 'h':
+                print_usage(stdout, argv[0]);
+                exit(EXIT_SUCCESS);
+            case '?':
+                print_usage(stderr, argv[0]);
+                exit(EXIT_FAILURE);
+            default:
+                exit(EXIT_FAILURE);
         }
     }
-    if (!src || !session) { usage(argv[0]); return 1; }
+
+   if (optind + 2 > argc) {
+        fprintf(stderr, "Error: Missing required arguments <session_id> and/or <src_dir>\n\n");
+        print_usage(stderr, argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    const char *session = argv[optind];
+    const char *src     = argv[optind + 1];
 
     /* open .bin (verify existence; not read in v2.1) */
     char bin_path[PATH_MAX], meta_path[PATH_MAX];
