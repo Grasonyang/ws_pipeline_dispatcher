@@ -104,7 +104,7 @@ make test
 make smoke
 ```
 
-構建系統會輸出二進制檔案至 `build/`，測試成品至 `.test_tmp/`。
+構建系統會輸出二進制檔案至 `build/`。
 
 ### C 代碼風格
 
@@ -197,12 +197,12 @@ make smoke
 
 ### stderr - 僅用於診斷
 - 專用於診斷日誌、警告和錯誤
-- 使用 stream_logger 助手：`logger_warn(fmt, ...)`、`logger_error(fmt, ...)`
+- 使用 `stream_logger` 巨集：`LOG_WARN(...)`、`LOG_ERROR(...)`
 - 包含上下文（例：檔案名、記錄號、操作類型）
 - 例子：
   ```c
-  logger_warn("skipping invalid JSON line %d: %s", line_num, line);
-  logger_error("failed to open sidecar file: %s", strerror(errno));
+  LOG_WARN("skipping invalid JSON line %d: %s", line_num, line);
+  LOG_ERROR("failed to open sidecar file: %s", strerror(errno));
   ```
 
 ## 測試
@@ -244,11 +244,26 @@ valgrind --leak-check=full ./build/clip_store <args>
   set -eu
   TMP_DIR=$(mktemp -d)
   trap 'rm -rf "$TMP_DIR"' EXIT
-  
+
+  check_eq() {
+      name=$1; expected=$2; actual=$3
+      if [ "$expected" != "$actual" ]; then
+          printf 'FAIL %s\nexpected: %s\nactual:   %s\n' "$name" "$expected" "$actual" >&2; exit 1
+      fi
+  }
+
+  check_contains() {
+      name=$1; needle=$2; haystack=$3
+      case "$haystack" in
+          *"$needle"*) ;;
+          *) printf 'FAIL %s\nneedle: %s\nhaystack: %s\n' "$name" "$needle" "$haystack" >&2; exit 1 ;;
+      esac
+  }
+
   # 正常測試案例
   echo '{"id":1,"msg":"test"}' | ./build/log_parse --filter id=1 > "$TMP_DIR/out"
   check_eq "filter id=1" '{"id":1,"msg":"test"}' "$(cat $TMP_DIR/out)"
-  
+
   # 錯誤情況測試
   echo 'malformed' | ./build/log_parse --filter id=1 2>"$TMP_DIR/err"
   check_contains "error message" "error" "$(cat $TMP_DIR/err)"
@@ -317,7 +332,7 @@ valgrind --leak-check=full ./build/clip_store <args>
 
 首先，為自己建立倉庫的副本：
 
-1. 前往 [ws_pipeline_dispatcher GitHub 倉庫](https://github.com/your-org/ws_pipeline_dispatcher)
+1. 前往 [ws_pipeline_dispatcher GitHub 倉庫](https://github.com/Grasonyang/ws_pipeline_dispatcher)
 2. 點擊右上角的 **"Fork"** 按鈕
 3. 這會在您的 GitHub 帳戶下建立一個副本（例：`your-username/ws_pipeline_dispatcher`）
 
@@ -333,14 +348,14 @@ git clone https://github.com/your-username/ws_pipeline_dispatcher.git
 cd ws_pipeline_dispatcher
 
 # 將原始倉庫添加為 "upstream" 以進行同步
-git remote add upstream https://github.com/original-org/ws_pipeline_dispatcher.git
+git remote add upstream https://github.com/Grasonyang/ws_pipeline_dispatcher.git
 
 # 驗證您有兩個遠端
 git remote -v
 # origin    https://github.com/your-username/ws_pipeline_dispatcher.git (fetch)
 # origin    https://github.com/your-username/ws_pipeline_dispatcher.git (push)
-# upstream  https://github.com/original-org/ws_pipeline_dispatcher.git (fetch)
-# upstream  https://github.com/original-org/ws_pipeline_dispatcher.git (push)
+# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (fetch)
+# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (push)
 ```
 
 ### 第 3 步：建立功能分支
@@ -426,7 +441,7 @@ git push origin feat/my-new-feature
 
 ### 第 7 步：建立 Pull Request
 
-1. 前往 [原始倉庫](https://github.com/original-org/ws_pipeline_dispatcher)
+1. 前往 [原始倉庫](https://github.com/Grasonyang/ws_pipeline_dispatcher)
 2. 您將看到從您的 fork 建立 Pull Request 的提示
 3. 點擊 **"Compare & pull request"**
 4. 填寫 PR 模板：
@@ -647,4 +662,4 @@ git reset --hard upstream/main
 
 ---
 
-*最後更新：2024 年*
+*最後更新：2026 年*

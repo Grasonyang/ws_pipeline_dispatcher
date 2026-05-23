@@ -103,7 +103,7 @@ make test
 make smoke
 ```
 
-Build outputs go to `build/`, test artifacts to `.test_tmp/`.
+Build outputs go to `build/`.
 
 ### C Code Style
 
@@ -196,12 +196,12 @@ This is a **critical** part of our UNIX philosophy and **must be followed**:
 
 ### stderr - Diagnostics Only
 - Reserved for diagnostic logs, warnings, and errors
-- Use `stream_logger` helpers: `logger_warn(fmt, ...)`, `logger_error(fmt, ...)`
+- Use `stream_logger` macros: `LOG_WARN(...)`, `LOG_ERROR(...)`
 - Include context (filename, record number, operation type)
 - Example:
   ```c
-  logger_warn("skipping invalid JSON line %d: %s", line_num, line);
-  logger_error("failed to open sidecar file: %s", strerror(errno));
+  LOG_WARN("skipping invalid JSON line %d: %s", line_num, line);
+  LOG_ERROR("failed to open sidecar file: %s", strerror(errno));
   ```
 
 ## Testing
@@ -243,11 +243,26 @@ valgrind --leak-check=full ./build/clip_store <args>
   set -eu
   TMP_DIR=$(mktemp -d)
   trap 'rm -rf "$TMP_DIR"' EXIT
-  
+
+  check_eq() {
+      name=$1; expected=$2; actual=$3
+      if [ "$expected" != "$actual" ]; then
+          printf 'FAIL %s\nexpected: %s\nactual:   %s\n' "$name" "$expected" "$actual" >&2; exit 1
+      fi
+  }
+
+  check_contains() {
+      name=$1; needle=$2; haystack=$3
+      case "$haystack" in
+          *"$needle"*) ;;
+          *) printf 'FAIL %s\nneedle: %s\nhaystack: %s\n' "$name" "$needle" "$haystack" >&2; exit 1 ;;
+      esac
+  }
+
   # Normal test case
   echo '{"id":1,"msg":"test"}' | ./build/log_parse --filter id=1 > "$TMP_DIR/out"
   check_eq "filter id=1" '{"id":1,"msg":"test"}' "$(cat $TMP_DIR/out)"
-  
+
   # Error case
   echo 'malformed' | ./build/log_parse --filter id=1 2>"$TMP_DIR/err"
   check_contains "error message" "error" "$(cat $TMP_DIR/err)"
@@ -322,7 +337,7 @@ This section walks through the complete process from start to finish. Following 
 
 First, create your own copy of the repository:
 
-1. Go to [ws_pipeline_dispatcher GitHub repository](https://github.com/your-org/ws_pipeline_dispatcher)
+1. Go to [ws_pipeline_dispatcher GitHub repository](https://github.com/Grasonyang/ws_pipeline_dispatcher)
 2. Click the **"Fork"** button in the top-right corner
 3. This creates a copy under your GitHub account (e.g., `your-username/ws_pipeline_dispatcher`)
 
@@ -338,14 +353,14 @@ git clone https://github.com/your-username/ws_pipeline_dispatcher.git
 cd ws_pipeline_dispatcher
 
 # Add the original repository as "upstream" for syncing
-git remote add upstream https://github.com/original-org/ws_pipeline_dispatcher.git
+git remote add upstream https://github.com/Grasonyang/ws_pipeline_dispatcher.git
 
 # Verify you have both remotes
 git remote -v
 # origin    https://github.com/your-username/ws_pipeline_dispatcher.git (fetch)
 # origin    https://github.com/your-username/ws_pipeline_dispatcher.git (push)
-# upstream  https://github.com/original-org/ws_pipeline_dispatcher.git (fetch)
-# upstream  https://github.com/original-org/ws_pipeline_dispatcher.git (push)
+# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (fetch)
+# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (push)
 ```
 
 ### Step 3: Create a Feature Branch
@@ -425,7 +440,7 @@ git push origin feat/my-new-feature
 
 ### Step 7: Create a Pull Request
 
-1. Go to the [original repository](https://github.com/original-org/ws_pipeline_dispatcher)
+1. Go to the [original repository](https://github.com/Grasonyang/ws_pipeline_dispatcher)
 2. You'll see a prompt to create a Pull Request from your fork
 3. Click **"Compare & pull request"**
 4. Fill in the PR template:
@@ -646,4 +661,4 @@ Thank you for contributing to `ws_pipeline_dispatcher`! Whether it's code, docum
 
 ---
 
-*Last updated: 2024*
+*Last updated: 2026*
