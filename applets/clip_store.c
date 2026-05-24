@@ -1,7 +1,6 @@
 
 
 #include "libpipeline.h"
-#include "stream_logger.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -15,6 +14,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef struct {
     char *key;
@@ -35,7 +35,7 @@ static void print_usage(FILE *stream, const char *prog_name) {
     fprintf(stream, "  -h, --help             Show this help message and exit\n");
 }
 
-static int parse_row(char *line, row_t *row)
+static int parse_db_row(char *line, row_t *row)
 {
     char *a = strchr(line, '\t');
     if (a == NULL) {
@@ -68,7 +68,7 @@ static int load_latest(FILE *fp, const char *key, row_t *out, long now)
     while (getline(&line, &cap, fp) > 0) {
         line[strcspn(line, "\r\n")] = '\0';
         row_t row = {0};
-        if (parse_row(line, &row) != 0) {
+        if (parse_db_row(line, &row) != 0) {
             continue;
         }
         if (strcmp(row.key, key) == 0) {
@@ -111,7 +111,7 @@ static int rewrite_gc(FILE *fp, const char *db_path, long now)
     while (getline(&line, &line_cap, fp) > 0) {
         line[strcspn(line, "\r\n")] = '\0';
         row_t parsed = {0};
-        if (parse_row(line, &parsed) != 0) {
+        if (parse_db_row(line, &parsed) != 0) {
             continue;
         }
 
@@ -288,34 +288,29 @@ int main(int argc, char *argv[])
         char *line = NULL;
         size_t cap = 0;
         while (getline(&line, &cap, stdin) > 0) {
-            char *session = pipeline_json_find_string(line, "session_id");
-            char *ts = pipeline_json_find_scalar(line, "ts");
-            char *path = pipeline_json_find_string(line, "path");
-            if (session == NULL || ts == NULL || path == NULL) {
+            char session[128] = {0};
+            char path[PATH_MAX] = {0};
+            int64_t ts = 0;
+            if (jsonl_get_string(line, "session_id", session, sizeof(session)) != 0 ||
+                jsonl_get_int64(line, "ts", &ts) != 0 ||
+                jsonl_get_string(line, "path", path, sizeof(path)) != 0) {
                 LOG_WARN("malformed clip JSON; skipping");
-                free(session);
-                free(ts);
-                free(path);
                 continue;
             }
-            pipeline_buffer_t key = {0};
+            dynamic_buffer_t key = {0};
             long row_now = (long)time(NULL);
-            if (pipeline_buffer_append_str(&key, session) != 0 ||
-                pipeline_buffer_append_char(&key, ':') != 0 ||
-                pipeline_buffer_append_str(&key, ts) != 0 ||
+            char ts_buf[32];
+            snprintf(ts_buf, sizeof(ts_buf), "%lld", (long long)ts);
+            if (dynamic_buffer_append_str(&key, session) != 0 ||
+                dynamic_buffer_append_char(&key, ':') != 0 ||
+                dynamic_buffer_append_str(&key, ts_buf) != 0 ||
                 append_row(fp, key.data, path, ttl == 0 ? 0 : row_now + ttl) != 0) {
                 LOG_ERROR("write db failed: %s", strerror(errno));
                 rc = 1;
-                pipeline_buffer_free(&key);
-                free(session);
-                free(ts);
-                free(path);
+                dynamic_buffer_free(&key);
                 break;
             }
-            pipeline_buffer_free(&key);
-            free(session);
-            free(ts);
-            free(path);
+            dynamic_buffer_free(&key);
         }
         free(line);
     }

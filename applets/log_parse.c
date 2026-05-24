@@ -1,5 +1,4 @@
 #include "libpipeline.h"
-#include "stream_logger.h"
 
 #include <regex.h>
 #include <ctype.h>
@@ -136,73 +135,36 @@ static int record_matches_filter(const record_t *record, const filter_t *filter)
 
 /* Structured output formatting. */
 
-static int buffer_append_json_string(pipeline_buffer_t *buf, const char *s) {
-    if (pipeline_buffer_append_char(buf, '"') != 0) {
-        return -1;
-    }
-    for (const unsigned char *p = (const unsigned char *)s; *p != '\0'; ++p) {
-        switch (*p) {
-            case '"':
-            case '\\':
-                if (pipeline_buffer_append_char(buf, '\\') != 0 || pipeline_buffer_append_char(buf, (char)*p) != 0) {
-                    return -1;
-                }
-                break;
-            case '\n':
-                if (pipeline_buffer_append_str(buf, "\\n") != 0) {
-                    return -1;
-                }
-                break;
-            case '\r':
-                if (pipeline_buffer_append_str(buf, "\\r") != 0) {
-                    return -1;
-                }
-                break;
-            case '\t':
-                if (pipeline_buffer_append_str(buf, "\\t") != 0) {
-                    return -1;
-                }
-                break;
-            default:
-                if (pipeline_buffer_append_char(buf, (char)*p) != 0) {
-                    return -1;
-                }
-                break;
-        }
-    }
-    return pipeline_buffer_append_char(buf, '"');
-}
-
 static int emit_json(const record_t *record) {
-    pipeline_buffer_t buf = {0};
-    if (pipeline_buffer_append_char(&buf, '{') != 0) {
+    dynamic_buffer_t buf = {0};
+    if (dynamic_buffer_append_char(&buf, '{') != 0) {
         goto buffer_fail;
     }
     for (size_t i = 0; i < record->count; ++i) {
         if (i > 0) {
-            if (pipeline_buffer_append_char(&buf, ',') != 0) {
+            if (dynamic_buffer_append_char(&buf, ',') != 0) {
                 goto buffer_fail;
             }
         }
-        if (buffer_append_json_string(&buf, record->names[i]) != 0) {
+        if (jsonl_write_string(&buf, record->names[i]) != 0) {
             goto buffer_fail;
         }
-        if (pipeline_buffer_append_char(&buf, ':') != 0) {
+        if (dynamic_buffer_append_char(&buf, ':') != 0) {
             goto buffer_fail;
         }
-        if (buffer_append_json_string(&buf, record->values[i]) != 0) {
+        if (jsonl_write_string(&buf, record->values[i]) != 0) {
             goto buffer_fail;
         }
     }
-    if (pipeline_buffer_append_str(&buf, "}\n") != 0) {
+    if (dynamic_buffer_append_str(&buf, "}\n") != 0) {
         goto buffer_fail;
     }
     fputs(buf.data, stdout);
-    pipeline_buffer_free(&buf);
+    dynamic_buffer_free(&buf);
     return 0;
 
 buffer_fail:
-    pipeline_buffer_free(&buf);
+    dynamic_buffer_free(&buf);
     return -1;
 }
 
@@ -258,7 +220,7 @@ static int parse_regex_record(const char *line, regex_t *regex, record_t *record
             free(matches);
             return 1;
         }
-        record->values[i] = pipeline_strndup(line + m.rm_so, (size_t)(m.rm_eo - m.rm_so));
+        record->values[i] = lp_strndup(line + m.rm_so, (size_t)(m.rm_eo - m.rm_so));
         if (record->values[i] == NULL) {
             free_record_values(record);
             free(matches);
@@ -300,12 +262,11 @@ static int process_json_line(const char *line, const filter_t *filter)
         return 0;
     }
 
-    char *value = pipeline_json_find_string(line, filter->key);
-    if (value == NULL) {
+    char value[1024] = {0};
+    if (jsonl_get_string(line, filter->key, value, sizeof(value)) != 0) {
         return 0;
     }
     int matched = strcmp(value, filter->value) == 0;
-    free(value);
     if (matched) {
         puts(line);
     }

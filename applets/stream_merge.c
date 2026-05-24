@@ -16,7 +16,6 @@
  */
 
 #include "libpipeline.h"
-#include "stream_logger.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -44,63 +43,18 @@ typedef struct {
     int      valid;
 } meta_record_t;
 
-/*
- * Minimal field extractor: find "key": <value> in a JSON line without a
- * full parser.  Returns pointer to start of value token, NULL on miss.
- */
-static const char *find_field(const char *line, const char *key)
-{
-    char needle[64];
-    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-    if (n < 0 || (size_t)n >= sizeof(needle)) return NULL;
-    const char *p = strstr(line, needle);
-    if (!p) return NULL;
-    p += (size_t)n;
-    while (*p == ' ' || *p == '\t') ++p;
-    if (*p != ':') return NULL;
-    ++p;
-    while (*p == ' ' || *p == '\t') ++p;
-    return p;
-}
-
 static int parse_meta_record(const char *line, size_t len, meta_record_t *out)
 {
     (void)len;
     memset(out, 0, sizeof(*out));
 
-    /* kind */
-    const char *p = find_field(line, "kind");
-    if (!p || *p != '"') return -1;
-    ++p;
-    size_t ki = 0;
-    while (*p && *p != '"' && ki + 1 < sizeof(out->kind))
-        out->kind[ki++] = *p++;
-    out->kind[ki] = '\0';
-
-    /* sequence */
-    p = find_field(line, "sequence");
-    if (!p) return -1;
-    char *end;
-    out->seq = (uint64_t)strtoull(p, &end, 10);
-    if (end == p) return -1;
-
-    /* offset */
-    p = find_field(line, "offset");
-    if (!p) return -1;
-    out->offset = (uint64_t)strtoull(p, &end, 10);
-    if (end == p) return -1;
-
-    /* length */
-    p = find_field(line, "length");
-    if (!p) return -1;
-    out->length = (uint64_t)strtoull(p, &end, 10);
-    if (end == p) return -1;
-
-    /* ts_ms */
-    p = find_field(line, "ts_ms");
-    if (!p) return -1;
-    out->ts_ms = (int64_t)strtoll(p, &end, 10);
-    if (end == p) return -1;
+    if (jsonl_get_string(line, "kind", out->kind, sizeof(out->kind)) != 0 ||
+        jsonl_get_uint64(line, "sequence", &out->seq) != 0 ||
+        jsonl_get_uint64(line, "offset", &out->offset) != 0 ||
+        jsonl_get_uint64(line, "length", &out->length) != 0 ||
+        jsonl_get_int64(line, "ts_ms", &out->ts_ms) != 0) {
+        return -1;
+    }
 
     out->valid = 1;
     return 0;
@@ -237,7 +191,7 @@ static int process_meta_record(const meta_record_t *rec, clip_state_t *s,
  * call process_meta_record for each complete line.
  * Returns 0 on success, -1 on I/O or emit error.
  */
-static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
+static int drain_meta(int meta_fd, dynamic_buffer_t *meta_buf,
                       clip_state_t *s, const char *src, const char *session,
                       int64_t clip_ms)
 {
@@ -250,7 +204,7 @@ static int drain_meta(int meta_fd, pipeline_buffer_t *meta_buf,
             return -1;
         }
         if (got == 0) break;
-        if (pipeline_buffer_append_mem(meta_buf, chunk, (size_t)got) != 0)
+        if (dynamic_buffer_append_mem(meta_buf, chunk, (size_t)got) != 0)
             return -1;
     }
 
@@ -320,7 +274,7 @@ static int check_idle(clip_state_t *s, int64_t idle_ms,
 static int sentinel_exists(const char *src)
 {
     char path[PATH_MAX];
-    if (pipeline_path_join(path, sizeof(path), src, PIPELINE_SENTINEL_NAME) != 0)
+    if (lp_build_artifact_path(path, sizeof(path), src, PIPELINE_SENTINEL_NAME) != 0)
         return 0;
     return access(path, F_OK) == 0;
 }
@@ -339,7 +293,7 @@ static void consume_inotify(int fd, int *saw_sentinel)
              off + (ssize_t)sizeof(struct inotify_event) <= got;) {
             const struct inotify_event *ev =
                 (const struct inotify_event *)(buf + off);
-            if (ev->len > 0 && pipeline_path_is_sentinel(ev->name))
+            if (ev->len > 0 && lp_is_completed_session(ev->name))
                 *saw_sentinel = 1;
             off += (ssize_t)sizeof(struct inotify_event) + (ssize_t)ev->len;
         }
@@ -408,8 +362,8 @@ int main(int argc, char *argv[])
         char bin_name[PATH_MAX], meta_name[PATH_MAX];
         if (snprintf(bin_name,  sizeof(bin_name),  "%s.bin",        session) < 0 ||
             snprintf(meta_name, sizeof(meta_name), "%s.meta.jsonl", session) < 0 ||
-            pipeline_path_join(bin_path,  sizeof(bin_path),  src, bin_name)  != 0 ||
-            pipeline_path_join(meta_path, sizeof(meta_path), src, meta_name) != 0) {
+            lp_build_artifact_path(bin_path,  sizeof(bin_path),  src, bin_name)  != 0 ||
+            lp_build_artifact_path(meta_path, sizeof(meta_path), src, meta_name) != 0) {
             LOG_ERROR("path construction failed");
             return 1;
         }
@@ -423,7 +377,7 @@ int main(int argc, char *argv[])
 
     /* Open dir_fd FIRST so we can poll for meta file appearance if needed */
     int dir_wd = -1;
-    int dir_fd = pipeline_open_dir_watch(src, &dir_wd);
+    int dir_fd = lp_watch_dir(src, &dir_wd);
     if (dir_fd < 0) {
         LOG_ERROR("inotify dir watch failed: %s", strerror(errno));
         close(bin_fd);
@@ -467,7 +421,7 @@ int main(int argc, char *argv[])
     }
 
     int meta_wd = -1;
-    int meta_wfd = pipeline_open_file_watch(meta_path, &meta_wd);
+    int meta_wfd = lp_watch_file(meta_path, &meta_wd);
     if (meta_wfd < 0) {
         LOG_ERROR("inotify meta watch failed: %s", strerror(errno));
         close(dir_fd);
@@ -478,7 +432,7 @@ int main(int argc, char *argv[])
 
     LOG_INFO("inotify ready");
 
-    pipeline_buffer_t meta_buf = {0};
+    dynamic_buffer_t meta_buf = {0};
     clip_state_t      clip     = {0};
     int saw_sentinel = sentinel_exists(src);
     int rc = 0;
@@ -542,7 +496,7 @@ int main(int argc, char *argv[])
         clip_reset(&clip);
     }
 
-    pipeline_buffer_free(&meta_buf);
+    dynamic_buffer_free(&meta_buf);
     close(meta_wfd);
     close(dir_fd);
     close(meta_fd);

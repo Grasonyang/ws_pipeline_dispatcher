@@ -15,13 +15,13 @@
 
 CC        ?= cc
 CFLAGS    ?= -std=c11 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L
-CPPFLAGS  ?= -Ilib
+CPPFLAGS  ?= -Ilib -Ithird-party/cJSON
 LDFLAGS   ?=
 LDLIBS    ?=
 
 BUILD_DIR := build
-LIB_SRCS  := lib/libpipeline.c lib/stream_logger.c
-LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/stream_logger.o
+LIB_SRCS  := lib/libpipeline.c lib/dynamic_buffer.c lib/jsonl_codec.c lib/stream_logger.c third-party/cJSON/cJSON.c
+LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/dynamic_buffer.o $(BUILD_DIR)/jsonl_codec.o $(BUILD_DIR)/stream_logger.o $(BUILD_DIR)/cJSON.o
 
 APPLETS   := pipeline_dispatcher stream_merge log_parse clip_store
 BINS      := $(addprefix $(BUILD_DIR)/,$(APPLETS))
@@ -40,7 +40,16 @@ all: $(BINS)
 $(BUILD_DIR):
 	@mkdir -p $@
 
-$(BUILD_DIR)/libpipeline.o: lib/libpipeline.c lib/libpipeline.h | $(BUILD_DIR)
+$(BUILD_DIR)/libpipeline.o: lib/libpipeline.c lib/libpipeline.h lib/dynamic_buffer.h lib/jsonl_codec.h lib/stream_logger.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/dynamic_buffer.o: lib/dynamic_buffer.c lib/dynamic_buffer.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/jsonl_codec.o: lib/jsonl_codec.c lib/jsonl_codec.h lib/dynamic_buffer.h third-party/cJSON/cJSON.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/cJSON.o: third-party/cJSON/cJSON.c third-party/cJSON/cJSON.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/stream_logger.o: lib/stream_logger.c lib/stream_logger.h | $(BUILD_DIR)

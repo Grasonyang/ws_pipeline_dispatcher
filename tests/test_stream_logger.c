@@ -2,7 +2,7 @@
  * test_stream_logger.c -- smoke tests for stderr-only logger behavior.
  */
 
-#include "stream_logger.h"
+#include "libpipeline.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -19,7 +19,6 @@
  */
 
 #include "libpipeline.h"
-#include "stream_logger.h"
 
 #include <errno.h>
 #include <limits.h>
