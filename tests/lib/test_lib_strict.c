@@ -56,6 +56,15 @@ static void test_dynamic_buffer_strict(void)
     CHECK(dynamic_buffer_reserve(&corrupt, 1) == -1);
     CHECK(errno == EINVAL);
     CHECK(dynamic_buffer_has_failed(&corrupt) == 1);
+
+    dynamic_buffer_t bad_len = {0};
+    CHECK(dynamic_buffer_reserve(&bad_len, 1) == 0);
+    bad_len.len = bad_len.cap;
+    errno = 0;
+    CHECK(dynamic_buffer_reserve(&bad_len, 1) == -1);
+    CHECK(errno == EINVAL);
+    CHECK(dynamic_buffer_has_failed(&bad_len) == 1);
+    dynamic_buffer_free(&bad_len);
 }
 
 static void test_jsonl_codec_strict(void)
