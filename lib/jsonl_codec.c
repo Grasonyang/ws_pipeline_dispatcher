@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <string.h>
 
+/*
+ * cJSON stores numbers as double. Keep the public integer getters conservative
+ * so callers never receive silently rounded sequence, offset, or timestamp data.
+ */
 #define JSONL_MAX_SAFE_INTEGER 9007199254740991.0
 
 static cJSON *parse_object(const char *line) {
@@ -27,6 +31,7 @@ static cJSON *get_item(cJSON *root, const char *key) {
     return cJSON_GetObjectItemCaseSensitive(root, key);
 }
 
+/* Each getter owns the cJSON tree locally to keep the public API stateless. */
 int jsonl_get_string(const char *line, const char *key, char *out, size_t out_size) {
     if (out == NULL || out_size == 0) {
         return -1;
@@ -63,6 +68,7 @@ int jsonl_get_int64(const char *line, const char *key, int64_t *out) {
     }
 
     int64_t v = (int64_t)item->valuedouble;
+    /* Reject fractional values that cJSON otherwise accepts as numbers. */
     if ((double)v != item->valuedouble) {
         cJSON_Delete(root);
         return -1;
@@ -86,6 +92,7 @@ int jsonl_get_uint64(const char *line, const char *key, uint64_t *out) {
     }
 
     uint64_t v = (uint64_t)item->valuedouble;
+    /* Reject fractional values and any value that would lose precision. */
     if ((double)v != item->valuedouble) {
         cJSON_Delete(root);
         return -1;

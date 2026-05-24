@@ -26,7 +26,7 @@ LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/dynamic_buffer.o $(BUILD_DI
 APPLETS   := pipeline_dispatcher stream_merge log_parse clip_store
 BINS      := $(addprefix $(BUILD_DIR)/,$(APPLETS))
 
-TEST_BINS    := $(BUILD_DIR)/test_libpipeline $(BUILD_DIR)/test_stream_logger
+TEST_BINS    := $(BUILD_DIR)/test_libpipeline $(BUILD_DIR)/test_stream_logger $(BUILD_DIR)/test_lib_strict
 TEST_SCRIPTS := tests/test_log_parse.sh tests/test_clip_store.sh tests/test_stream_merge.sh tests/test_pipeline_dispatcher.sh
 
 MAN_DIR   := man
@@ -63,6 +63,9 @@ $(BUILD_DIR)/test_libpipeline: tests/test_libpipeline.c $(LIB_OBJS) | $(BUILD_DI
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(LIB_OBJS) $(LDFLAGS) $(LDLIBS) -o $@
 
 $(BUILD_DIR)/test_stream_logger: tests/test_stream_logger.c $(LIB_OBJS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(LIB_OBJS) $(LDFLAGS) $(LDLIBS) -o $@
+
+$(BUILD_DIR)/test_lib_strict: tests/lib/test_lib_strict.c $(LIB_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(LIB_OBJS) $(LDFLAGS) $(LDLIBS) -o $@
 
 test: $(TEST_BINS) $(BINS)

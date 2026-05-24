@@ -1,6 +1,9 @@
 /*
- * libpipeline.c
- * version: v1.1
+ * Shared OS-facing helpers for pipeline applets.
+ *
+ * This file intentionally keeps low-level filesystem/watch utilities separate
+ * from applet policy. Callers own returned file descriptors and allocated
+ * strings unless a function explicitly returns an error.
  */
 
 #include "libpipeline.h"
@@ -85,6 +88,7 @@ int lp_is_completed_session(const char *filename) {
         return 0;
     }
 
+    /* Only the basename is meaningful; parent directory names are ignored. */
     const char *base = strrchr(filename, '/');
     if (base != NULL) {
         filename = base + 1;
@@ -97,6 +101,7 @@ int lp_build_artifact_path(char *out, size_t sz, const char *dir, const char *na
     if (out == NULL || dir == NULL || name == NULL) {
         return -1;
     }
+    /* snprintf gives one overflow check for both formatting and NUL termination. */
     int n = snprintf(out, sz, "%s/%s", dir, name);
     return n >= 0 && (size_t)n < sz ? 0 : -1;
 }

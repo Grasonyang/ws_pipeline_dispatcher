@@ -21,7 +21,9 @@
 #include "jsonl_codec.h"
 #include "stream_logger.h"
 
-// Sentinel filename created by the upstream writer when a session is complete.
+/**
+ * @brief Sentinel filename created by the upstream writer when a session is complete.
+ */
 #define PIPELINE_SENTINEL_NAME ".pipeline_end"
 
 /**
@@ -30,10 +32,10 @@
  * Watches at least IN_CLOSE_WRITE | IN_MOVED_TO. Callers own the returned fd
  * and must close it when the watch is no longer needed.
  *
- * @param dir_path absolute or relative directory path; must already exist
- * @param watch_descriptor out: inotify_add_watch() watch descriptor
- *
+ * @param dir_path Absolute or relative directory path; must already exist.
+ * @param watch_descriptor Output location for the inotify watch descriptor.
  * @return inotify fd (>= 0), or -1 on failure with errno set.
+ * @note The returned fd is non-blocking and must be closed by the caller.
  */
 int lp_watch_dir(const char *dir_path, int *watch_descriptor);
 
@@ -45,10 +47,10 @@ int lp_watch_dir(const char *dir_path, int *watch_descriptor);
  * completion. Callers own the returned fd and must close it when the watch is
  * no longer needed.
  *
- * @param file_path absolute or relative file path; must already exist
- * @param watch_descriptor out: inotify_add_watch() watch descriptor
- *
+ * @param file_path Absolute or relative file path; must already exist.
+ * @param watch_descriptor Output location for the inotify watch descriptor.
  * @return inotify fd (>= 0), or -1 on failure with errno set.
+ * @note The returned fd is non-blocking and must be closed by the caller.
  */
 int lp_watch_file(const char *file_path, int *watch_descriptor);
 
@@ -66,19 +68,22 @@ int64_t pipeline_get_monotonic_time_ms(void);
  *
  * Compares the basename against PIPELINE_SENTINEL_NAME and does not read file contents.
  *
- * @param filename filename or path to check.
+ * @param filename Filename or path to check.
  * @return 1 for sentinel, 0 otherwise.
+ * @note Only the basename is compared against PIPELINE_SENTINEL_NAME.
  */
 int lp_is_completed_session(const char *filename);
 
 /**
  * @brief Build a path by joining dir and name with a '/' separator.
  *
- * @param out   output buffer
- * @param sz    size of output buffer
- * @param dir   directory path (no trailing slash required)
- * @param name  filename to append
+ * @param out Output buffer.
+ * @param sz Size of output buffer in bytes.
+ * @param dir Directory path.
+ * @param name Filename to append.
  * @return 0 on success, -1 if the result would overflow or args are NULL.
+ * @note This always inserts one '/' separator; callers should avoid passing a
+ * trailing slash in dir if duplicate separators are undesirable.
  */
 int lp_build_artifact_path(char *out, size_t sz, const char *dir, const char *name);
 
@@ -87,9 +92,10 @@ int lp_build_artifact_path(char *out, size_t sz, const char *dir, const char *na
  *
  * Equivalent to POSIX strndup(). Always NUL-terminates the result.
  *
- * @param src  source buffer (need not be NUL-terminated within len bytes)
- * @param len  number of bytes to copy
- * @return pointer to new string, or NULL on allocation failure or NULL src.
+ * @param src Source buffer. It need not be NUL-terminated within len bytes.
+ * @param len Number of bytes to copy.
+ * @return Newly allocated NUL-terminated string, or NULL on allocation failure or NULL src.
+ * @note The caller owns the returned string and must free it.
  */
 char *lp_strndup(const char *src, size_t len);
 

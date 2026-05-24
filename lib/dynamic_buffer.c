@@ -6,6 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * dynamic_buffer keeps a simple append-only invariant: data[0..len) is caller
+ * content, data[len] is always '\0', and failed prevents accidental reuse after
+ * an allocation or contract error.
+ */
+
 void dynamic_buffer_free(dynamic_buffer_t *buf) {
     if (buf == NULL)
         return;
@@ -48,10 +54,10 @@ int dynamic_buffer_reserve(dynamic_buffer_t *buf, size_t extra) {
         return -1;
     }
 
-    /* Need = len + extra + trailing NUL; guard overflow up front. */
+    /* Need = len + extra + trailing NUL; guard overflow before addition. */
     if (extra > SIZE_MAX - 1 - buf->len) {
         buf->failed = 1;
-        errno = EOVERFLOW; // overflow
+        errno = EOVERFLOW;
         return -1;
     }
 
@@ -60,7 +66,7 @@ int dynamic_buffer_reserve(dynamic_buffer_t *buf, size_t extra) {
         return 0;
 
     size_t next = buf->cap == 0 ? 128 : buf->cap;
-    /* it's for 2 exponential growth, but we also need to guard against overflow here */
+    /* Double capacity for amortized append cost, falling back to exact need near SIZE_MAX. */
     while (next < need) {
         if (next > SIZE_MAX / 2) {
             next = need;
@@ -69,7 +75,6 @@ int dynamic_buffer_reserve(dynamic_buffer_t *buf, size_t extra) {
         next *= 2;
     }
 
-    /* after we get a valid next size, realloc and check for failure */
     char *data = realloc(buf->data, next);
     if (data == NULL) {
         buf->failed = 1;
@@ -93,7 +98,7 @@ int dynamic_buffer_append_char(dynamic_buffer_t *buf, char c) {
     return 0;
 }
 
-/* Note: different from append_str in that it doesn't null-terminate, it can be assign a length that you want to append */
+/* Unlike append_str, this accepts embedded NUL bytes and a caller-provided length. */
 int dynamic_buffer_append_mem(dynamic_buffer_t *buf, const void *src, size_t len) {
     if (buf != NULL && buf->failed) {
         errno = EIO;
