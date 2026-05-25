@@ -2,6 +2,7 @@
 
 #include "cJSON.h"
 
+#include <ctype.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -16,8 +17,16 @@ static cJSON *parse_object(const char *line) {
         return NULL;
     }
 
-    cJSON *root = cJSON_Parse(line);
+    const char *parse_end = NULL;
+    cJSON *root = cJSON_ParseWithOpts(line, &parse_end, 0);
     if (root == NULL || !cJSON_IsObject(root)) {
+        cJSON_Delete(root);
+        return NULL;
+    }
+    while (parse_end != NULL && *parse_end != '\0' && isspace((unsigned char)*parse_end)) {
+        ++parse_end;
+    }
+    if (parse_end == NULL || *parse_end != '\0') {
         cJSON_Delete(root);
         return NULL;
     }
@@ -118,6 +127,59 @@ int jsonl_get_bool(const char *line, const char *key, int *out) {
         return -1;
     }
 
+    cJSON_Delete(root);
+    return 0;
+}
+
+int jsonl_is_object(const char *line) {
+    cJSON *root = parse_object(line);
+    if (root == NULL) {
+        return 0;
+    }
+    cJSON_Delete(root);
+    return 1;
+}
+
+int jsonl_get_scalar_text(const char *line, const char *key, char *out, size_t out_size) {
+    if (out == NULL || out_size == 0) {
+        return -1;
+    }
+
+    cJSON *root = parse_object(line);
+    cJSON *item = get_item(root, key);
+    if (item == NULL || cJSON_IsObject(item) || cJSON_IsArray(item)) {
+        cJSON_Delete(root);
+        return -1;
+    }
+
+    if (cJSON_IsString(item)) {
+        if (item->valuestring == NULL) {
+            cJSON_Delete(root);
+            return -1;
+        }
+        size_t len = strlen(item->valuestring);
+        if (len >= out_size) {
+            cJSON_Delete(root);
+            return -1;
+        }
+        memcpy(out, item->valuestring, len + 1);
+        cJSON_Delete(root);
+        return 0;
+    }
+
+    char *printed = cJSON_PrintUnformatted(item);
+    if (printed == NULL) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    size_t len = strlen(printed);
+    if (len >= out_size) {
+        cJSON_free(printed);
+        cJSON_Delete(root);
+        return -1;
+    }
+    memcpy(out, printed, len + 1);
+    cJSON_free(printed);
     cJSON_Delete(root);
     return 0;
 }

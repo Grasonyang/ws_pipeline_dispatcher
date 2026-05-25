@@ -61,6 +61,28 @@ int jsonl_get_uint64(const char *line, const char *key, uint64_t *out);
 int jsonl_get_bool(const char *line, const char *key, int *out);
 
 /**
+ * @brief Validate that a JSONL line is a JSON object.
+ *
+ * @param line NUL-terminated JSON line.
+ * @return 1 if line parses to a JSON object, otherwise 0.
+ */
+int jsonl_is_object(const char *line);
+
+/**
+ * @brief Copy a top-level scalar field as text.
+ *
+ * Strings are copied without surrounding quotes. Numbers and booleans are
+ * rendered as JSON text, e.g. 42, true, false.
+ *
+ * @param line NUL-terminated JSON object line.
+ * @param key Case-sensitive field name to read.
+ * @param out Destination buffer.
+ * @param out_size Size of destination buffer in bytes.
+ * @return 0 on success, -1 for missing key, object/array value, invalid JSON, or overflow.
+ */
+int jsonl_get_scalar_text(const char *line, const char *key, char *out, size_t out_size);
+
+/**
  * @brief Append value as one escaped JSON string token.
  *
  * @param buf Destination buffer.

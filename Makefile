@@ -22,6 +22,11 @@ LDLIBS    ?=
 BUILD_DIR := build
 LIB_SRCS  := lib/libpipeline.c lib/dynamic_buffer.c lib/jsonl_codec.c lib/stream_logger.c third-party/cJSON/cJSON.c
 LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/dynamic_buffer.o $(BUILD_DIR)/jsonl_codec.o $(BUILD_DIR)/stream_logger.o $(BUILD_DIR)/cJSON.o
+LOG_PARSE_SRCS := \
+    applets/log_parse/log_parse.c \
+    applets/log_parse/log_filter_expr.c \
+    applets/log_parse/log_output_format.c \
+    applets/log_parse/log_regex.c
 
 APPLETS   := pipeline_dispatcher stream_merge log_parse clip_store
 BINS      := $(addprefix $(BUILD_DIR)/,$(APPLETS))
@@ -54,6 +59,10 @@ $(BUILD_DIR)/cJSON.o: third-party/cJSON/cJSON.c third-party/cJSON/cJSON.h | $(BU
 
 $(BUILD_DIR)/stream_logger.o: lib/stream_logger.c lib/stream_logger.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+
+$(BUILD_DIR)/log_parse: $(LOG_PARSE_SRCS) applets/log_parse/log_parse.h applets/log_parse/log_filter_expr.h applets/log_parse/log_output_format.h applets/log_parse/log_regex.h $(LIB_OBJS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LOG_PARSE_SRCS) $(LIB_OBJS) $(LDFLAGS) $(LDLIBS) -o $@
 
 # Each applet links against the shared lib objects.
 $(BUILD_DIR)/%: applets/%.c $(LIB_OBJS) | $(BUILD_DIR)

@@ -53,6 +53,11 @@ int dynamic_buffer_reserve(dynamic_buffer_t *buf, size_t extra) {
         errno = EINVAL;
         return -1;
     }
+    if (buf->data != NULL && buf->len >= buf->cap) {
+        buf->failed = 1;
+        errno = EINVAL;
+        return -1;
+    }
 
     /* Need = len + extra + trailing NUL; guard overflow before addition. */
     if (extra > SIZE_MAX - 1 - buf->len) {
