@@ -1,7 +1,7 @@
 # ws_pipeline_dispatcher — v1 minimal Makefile
 #
 # Targets:
-#   make            — build all binaries into build/
+#   make            — build all binaries into .build/
 #   make test       — build & run unit tests
 #   make smoke      — end-to-end skeleton smoke test
 #   make install-man — install man pages to $(MANDIR) (default: /usr/local/share/man/man1)
@@ -11,16 +11,16 @@
 #   lib/     shared code (libpipeline, stream_logger)
 #   applets/ one .c per executable (pipeline_dispatcher + 3 stubs)
 #   tests/   unit tests
-#   build/   build outputs (created at build time)
+#   .build/  build outputs (created at build time)
 
 CC        ?= cc
 CFLAGS    ?= -std=c11 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L
-CPPFLAGS  ?= -Ilib -Ithird-party/cJSON
+CPPFLAGS  ?= -Ilib -I.third-party/cJSON
 LDFLAGS   ?=
 LDLIBS    ?=
 
-BUILD_DIR := build
-LIB_SRCS  := lib/libpipeline.c lib/dynamic_buffer.c lib/jsonl_codec.c lib/stream_logger.c third-party/cJSON/cJSON.c
+BUILD_DIR := .build
+LIB_SRCS  := lib/libpipeline.c lib/dynamic_buffer.c lib/jsonl_codec.c lib/stream_logger.c .third-party/cJSON/cJSON.c
 LIB_OBJS  := $(BUILD_DIR)/libpipeline.o $(BUILD_DIR)/dynamic_buffer.o $(BUILD_DIR)/jsonl_codec.o $(BUILD_DIR)/stream_logger.o $(BUILD_DIR)/cJSON.o
 LOG_PARSE_SRCS := \
     applets/log_parse/log_parse.c \
@@ -61,10 +61,10 @@ $(BUILD_DIR)/libpipeline.o: lib/libpipeline.c lib/libpipeline.h lib/dynamic_buff
 $(BUILD_DIR)/dynamic_buffer.o: lib/dynamic_buffer.c lib/dynamic_buffer.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/jsonl_codec.o: lib/jsonl_codec.c lib/jsonl_codec.h lib/dynamic_buffer.h third-party/cJSON/cJSON.h | $(BUILD_DIR)
+$(BUILD_DIR)/jsonl_codec.o: lib/jsonl_codec.c lib/jsonl_codec.h lib/dynamic_buffer.h .third-party/cJSON/cJSON.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/cJSON.o: third-party/cJSON/cJSON.c third-party/cJSON/cJSON.h | $(BUILD_DIR)
+$(BUILD_DIR)/cJSON.o: .third-party/cJSON/cJSON.c .third-party/cJSON/cJSON.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/stream_logger.o: lib/stream_logger.c lib/stream_logger.h | $(BUILD_DIR)
@@ -103,7 +103,7 @@ test: $(TEST_BINS) $(BINS)
 		sh $$test_script || exit $$?; \
 	done
 
-# End-to-end smoke: run dispatcher with skeleton stubs from build/.
+# End-to-end smoke: run dispatcher with skeleton stubs from .build/.
 smoke: all
 	@mkdir -p /tmp/ws_pipeline_smoke
 	@cd $(BUILD_DIR) && ./pipeline_dispatcher \
