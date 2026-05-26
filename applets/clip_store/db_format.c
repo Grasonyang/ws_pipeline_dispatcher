@@ -122,7 +122,7 @@ int append_db_row(FILE *fp, const char *key, const char *value, long expire_at) 
         unsigned char *comp = malloc(comp_len);
         if (!comp) return -1;
         
-        if (compress(comp, &comp_len, (const unsigned char *)value, (uLong)strlen(value)) != Z_OK) {
+        if (mz_compress(comp, &comp_len, (const unsigned char *)value, (uLong)strlen(value)) != Z_OK) {
             free(comp);
             return -1;
         }
@@ -150,6 +150,8 @@ int append_db_row(FILE *fp, const char *key, const char *value, long expire_at) 
         free(b64);
     }
     
-    /* Ensure the write is pushed to the OS immediately */
-    return fflush(fp);
+    /* We intentionally do not fflush here to maximize throughput. 
+       The caller (clip_store main loop) relies on standard stream buffering 
+       and calls fclose() which will flush at the end. */
+    return 0;
 }
