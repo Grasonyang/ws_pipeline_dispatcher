@@ -101,7 +101,40 @@ echo "========================================="
 
 echo ""
 echo "========================================="
-echo " Phase 4: End-to-End Pipeline (pipeline_dispatcher)"
+echo " Phase 4: log_parse aggregation vs awk"
+echo "========================================="
+echo "Generating text log dataset..."
+python3 -c '
+import random
+with open("test_env/bench_text.log", "w") as f:
+    for i in range(100000):
+        f.write(f"type=clip duration={random.randint(1, 100)}\n")
+'
+TEXT_FILE=test_env/bench_text.log
+TEXT_SIZE=$(wc -c < "$TEXT_FILE")
+TEXT_MB=$(awk "BEGIN {printf \"%.2f\", $TEXT_SIZE/1048576}")
+
+START=$(date +%s.%N)
+./.build/log_parse --regex '^type=clip duration=([0-9]+)$' --fields dur --sum dur < "$TEXT_FILE" > test_env/lp_agg.out || true
+END=$(date +%s.%N)
+LP_AGG_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+LP_AGG_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $LP_AGG_TIME}")
+
+START=$(date +%s.%N)
+awk -F'duration=' '{sum+=$2} END {print sum}' "$TEXT_FILE" > test_env/awk_agg.out || true
+END=$(date +%s.%N)
+AWK_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+AWK_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $AWK_TIME}")
+
+AWK_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_AGG_TP / $AWK_TP) * 100}")
+echo "log_parse --sum:     $LP_AGG_TP MB/s"
+echo "GNU awk:             $AWK_TP MB/s"
+echo "log_parse throughput is $AWK_RATIO% of awk"
+echo "========================================="
+
+echo ""
+echo "========================================="
+echo " Phase 5: End-to-End Pipeline (pipeline_dispatcher)"
 echo "========================================="
 rm -rf test_env && mkdir -p test_env
 python3 scripts/gen_data.py medium
