@@ -1,10 +1,10 @@
-# Contributing to ws_pipeline_dispatcher
+# Contributing to stream-data-pipeline
 
-Thank you for your interest in contributing to `ws_pipeline_dispatcher`! This document guides contributors through our development process, expectations, and best practices.
+Thank you for your interest in contributing to `stream-data-pipeline`! This document guides contributors through our development process, expectations, and best practices.
 
 ## Project Philosophy
 
-Before you start contributing, please understand the core UNIX principles that `ws_pipeline_dispatcher` follows:
+Before you start contributing, please understand the core UNIX principles that `stream-data-pipeline` follows:
 
 - **Single Responsibility**: Each applet (`stream_merge`, `log_parse`, `clip_store`) has one job
 - **Composition over Complexity**: Tools are designed to be combined via pipes, not monolithic
@@ -87,7 +87,7 @@ To maintain code consistency and readability, please follow these conventions.
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd ws_pipeline_dispatcher
+cd stream-data-pipeline
 
 # Compile all applets
 make
@@ -337,9 +337,9 @@ This section walks through the complete process from start to finish. Following 
 
 First, create your own copy of the repository:
 
-1. Go to [ws_pipeline_dispatcher GitHub repository](https://github.com/Grasonyang/ws_pipeline_dispatcher)
+1. Go to [stream-data-pipeline GitHub repository](https://github.com/Grasonyang/stream-data-pipeline)
 2. Click the **"Fork"** button in the top-right corner
-3. This creates a copy under your GitHub account (e.g., `your-username/ws_pipeline_dispatcher`)
+3. This creates a copy under your GitHub account (e.g., `your-username/stream-data-pipeline`)
 
 **Why Fork?** Forking lets you work safely on your own repo without needing main repo permissions, and without affecting main repo development.
 
@@ -349,18 +349,18 @@ Clone your fork to your machine and set up upstream for syncing with the main re
 
 ```bash
 # Clone YOUR fork (not the original repository)
-git clone https://github.com/your-username/ws_pipeline_dispatcher.git
-cd ws_pipeline_dispatcher
+git clone https://github.com/your-username/stream-data-pipeline.git
+cd stream-data-pipeline
 
 # Add the original repository as "upstream" for syncing
-git remote add upstream https://github.com/Grasonyang/ws_pipeline_dispatcher.git
+git remote add upstream https://github.com/Grasonyang/stream-data-pipeline.git
 
 # Verify you have both remotes
 git remote -v
-# origin    https://github.com/your-username/ws_pipeline_dispatcher.git (fetch)
-# origin    https://github.com/your-username/ws_pipeline_dispatcher.git (push)
-# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (fetch)
-# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (push)
+# origin    https://github.com/your-username/stream-data-pipeline.git (fetch)
+# origin    https://github.com/your-username/stream-data-pipeline.git (push)
+# upstream  https://github.com/Grasonyang/stream-data-pipeline.git (fetch)
+# upstream  https://github.com/Grasonyang/stream-data-pipeline.git (push)
 ```
 
 ### Step 3: Create a Feature Branch
@@ -440,7 +440,7 @@ git push origin feat/my-new-feature
 
 ### Step 7: Create a Pull Request
 
-1. Go to the [original repository](https://github.com/Grasonyang/ws_pipeline_dispatcher)
+1. Go to the [original repository](https://github.com/Grasonyang/stream-data-pipeline)
 2. You'll see a prompt to create a Pull Request from your fork
 3. Click **"Compare & pull request"**
 4. Fill in the PR template:
@@ -655,7 +655,7 @@ Before submitting a PR, make sure:
 
 ## Acknowledgments
 
-Thank you for contributing to `ws_pipeline_dispatcher`! Whether it's code, documentation, or bug reports, your help makes the project better.
+Thank you for contributing to `stream-data-pipeline`! Whether it's code, documentation, or bug reports, your help makes the project better.
 
 **All contributors will be recognized in the project's CONTRIBUTORS.md file.**
 

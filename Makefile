@@ -1,4 +1,4 @@
-# ws_pipeline_dispatcher — v1 minimal Makefile
+# stream-data-pipeline — v1 minimal Makefile
 #
 # Targets:
 #   make            — build all binaries into .build/

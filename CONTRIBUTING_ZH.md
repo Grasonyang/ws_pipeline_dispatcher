@@ -1,10 +1,10 @@
-# 貢獻 ws_pipeline_dispatcher
+# 貢獻 stream-data-pipeline
 
-感謝您對 `ws_pipeline_dispatcher` 的貢獻興趣！本文件引導貢獻者了解我們的開發流程、期望和最佳實踐。
+感謝您對 `stream-data-pipeline` 的貢獻興趣！本文件引導貢獻者了解我們的開發流程、期望和最佳實踐。
 
 ## 專案理念
 
-在開始貢獻前，請理解 `ws_pipeline_dispatcher` 遵循的核心 UNIX 原則：
+在開始貢獻前，請理解 `stream-data-pipeline` 遵循的核心 UNIX 原則：
 
 - **單一責任原則**：每個 applet（`stream_merge`、`log_parse`、`clip_store`）只有一個責任
 - **組合優於複雜性**：工具設計用於通過管道組合，而非單體架構
@@ -88,7 +88,7 @@
 ```bash
 # 克隆倉庫
 git clone <repo-url>
-cd ws_pipeline_dispatcher
+cd stream-data-pipeline
 
 # 編譯所有 applet
 make
@@ -332,9 +332,9 @@ valgrind --leak-check=full ./build/clip_store <args>
 
 首先，為自己建立倉庫的副本：
 
-1. 前往 [ws_pipeline_dispatcher GitHub 倉庫](https://github.com/Grasonyang/ws_pipeline_dispatcher)
+1. 前往 [stream-data-pipeline GitHub 倉庫](https://github.com/Grasonyang/stream-data-pipeline)
 2. 點擊右上角的 **"Fork"** 按鈕
-3. 這會在您的 GitHub 帳戶下建立一個副本（例：`your-username/ws_pipeline_dispatcher`）
+3. 這會在您的 GitHub 帳戶下建立一個副本（例：`your-username/stream-data-pipeline`）
 
 **為什麼 Fork？** Fork 讓您在自己的倉庫中安全地工作，無需主倉庫的權限，也不會影響主倉庫的開發。
 
@@ -344,18 +344,18 @@ valgrind --leak-check=full ./build/clip_store <args>
 
 ```bash
 # 克隆您的 fork（不是原始倉庫）
-git clone https://github.com/your-username/ws_pipeline_dispatcher.git
-cd ws_pipeline_dispatcher
+git clone https://github.com/your-username/stream-data-pipeline.git
+cd stream-data-pipeline
 
 # 將原始倉庫添加為 "upstream" 以進行同步
-git remote add upstream https://github.com/Grasonyang/ws_pipeline_dispatcher.git
+git remote add upstream https://github.com/Grasonyang/stream-data-pipeline.git
 
 # 驗證您有兩個遠端
 git remote -v
-# origin    https://github.com/your-username/ws_pipeline_dispatcher.git (fetch)
-# origin    https://github.com/your-username/ws_pipeline_dispatcher.git (push)
-# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (fetch)
-# upstream  https://github.com/Grasonyang/ws_pipeline_dispatcher.git (push)
+# origin    https://github.com/your-username/stream-data-pipeline.git (fetch)
+# origin    https://github.com/your-username/stream-data-pipeline.git (push)
+# upstream  https://github.com/Grasonyang/stream-data-pipeline.git (fetch)
+# upstream  https://github.com/Grasonyang/stream-data-pipeline.git (push)
 ```
 
 ### 第 3 步：建立功能分支
@@ -441,7 +441,7 @@ git push origin feat/my-new-feature
 
 ### 第 7 步：建立 Pull Request
 
-1. 前往 [原始倉庫](https://github.com/Grasonyang/ws_pipeline_dispatcher)
+1. 前往 [原始倉庫](https://github.com/Grasonyang/stream-data-pipeline)
 2. 您將看到從您的 fork 建立 Pull Request 的提示
 3. 點擊 **"Compare & pull request"**
 4. 填寫 PR 模板：
@@ -656,7 +656,7 @@ git reset --hard upstream/main
 
 ## 致謝
 
-感謝您對 `ws_pipeline_dispatcher` 的貢獻！無論是代碼、文件還是錯誤報告，您的幫助都讓這個專案更好。
+感謝您對 `stream-data-pipeline` 的貢獻！無論是代碼、文件還是錯誤報告，您的幫助都讓這個專案更好。
 
 **所有貢獻者都將在項目的 CONTRIBUTORS.md 中被認可。**
 

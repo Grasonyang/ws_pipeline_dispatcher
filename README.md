@@ -1,15 +1,15 @@
-# ws_pipeline_dispatcher
+# stream-data-pipeline
 
-`ws_pipeline_dispatcher` 是一組以 C 實作的 UNIX pipeline applets，對應 UNIX 系統程式設計期末專題選項 B「BusyBox 工具擴充」中的方向三「Embedded Data Pipeline」。
+`stream-data-pipeline` 是一組以 C 實作的 UNIX pipeline applets，對應 UNIX 系統程式設計期末專題選項 B「BusyBox 工具擴充」中的方向三「Embedded Data Pipeline」。
 
-本 repo 的主軸不是 WebSocket server，而是把上層落地的 append-only stream 轉成可被 UNIX pipe 組合、過濾、儲存的資料處理管線。
+本 repo 把上層落地的 append-only stream 轉成可被 UNIX pipe 組合、過濾、儲存的資料處理管線。
 
 ## 專案主軸
 
 系統分成兩層：
 
-- `edge-ws-host`：接收 ESP32 的持久 WebSocket/TCP 連線，在 `STRT ... many DATA/JSON ... END_` 的 session 期間持續收 packet，將每個 `DATA` payload append 到 session-level `{session_id}.bin` buffer，將 offset metadata 落到 sidecar，並在 session 結束後啟動 C pipeline。
-- `ws_pipeline_dispatcher`：讀取上層落地的 session artifact，切出 structured clip metadata，過濾 clip event，寫入 file-backed index。
+- `edge-ws-host` 或 UDP Server 等 Ingestor：接收連線或封包，將每個資料 payload append 到 session-level `{session_id}.bin` buffer，將 offset metadata 落到 sidecar，並在 session 開始時啟動 C pipeline。
+- `stream-data-pipeline` (`pipeline_dispatcher`)：讀取上層落地的 session artifact，切出 structured clip metadata，過濾 clip event，壓縮並寫入 file-backed index。
 
 核心設計是把複雜串流處理拆成三個小工具，並將它們**封裝為單一的 BusyBox 架構執行檔 (`box`)**：
 
