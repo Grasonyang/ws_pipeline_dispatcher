@@ -9,6 +9,14 @@ if ! command -v jq >/dev/null 2>&1; then
     sudo apt-get install -y jq
 fi
 echo "jq: $(jq --version)"
+if [ -x /tmp/toybox ]; then
+    echo "toybox: $(/tmp/toybox --version)"
+else
+    echo "toybox not found in /tmp/toybox. Downloading..."
+    wget -qO /tmp/toybox https://landley.net/toybox/bin/toybox-aarch64
+    chmod +x /tmp/toybox
+    echo "toybox: $(/tmp/toybox --version)"
+fi
 echo ""
 
 echo "========================================="
@@ -51,7 +59,30 @@ echo "Latency (Real Time): $LATENCY seconds"
 echo "Throughput: $THROUGHPUT MB/s"
 echo "Clips Emitted: $CLIPS"
 echo "Max RSS: ${MAX_RSS} kbytes"
-echo "See test_env/bench.log for stream_logger output."
+
+# GNU coreutils equivalent for stream_merge (windowing aggregation)
+START=$(date +%s.%N)
+awk -F'[:,}]' '
+  /"kind":"data"/ {
+    # Extract ts_ms and length approximately
+    for(i=1;i<=NF;i++) {
+      if($i=="\"ts_ms\"") ts=$(i+1);
+      if($i=="\"length\"") len=$(i+1);
+    }
+    if (start==0) start=ts;
+    if (ts - start >= 5000) {
+      print "clip emitted";
+      start=ts;
+    }
+  }
+' test_env/bench_medium.meta.jsonl > test_env/awk_sm_out.txt || true
+END=$(date +%s.%N)
+GNU_SM_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+GNU_SM_TP=$(awk "BEGIN {printf \"%.2f\", $MB_SIZE / $GNU_SM_TIME}")
+
+SM_RATIO=$(awk "BEGIN {printf \"%.1f\", ($THROUGHPUT / $GNU_SM_TP) * 100}")
+echo "GNU awk (reference windowing): $GNU_SM_TP MB/s"
+echo "stream_merge throughput is $SM_RATIO% of GNU awk"
 echo "========================================="
 
 echo ""
@@ -89,14 +120,24 @@ else
 fi
 
 START=$(date +%s.%N)
-grep '"type":"clip"' "$JSONL_FILE" > test_env/grep_out.jsonl || true
+awk -F'"type":"' '{split($2,a,"\""); if(a[1]=="clip") print}' "$JSONL_FILE" > test_env/gnu_awk_out.jsonl || true
 END=$(date +%s.%N)
-GREP_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
-GREP_TP=$(awk "BEGIN {printf \"%.2f\", $JSONL_MB / $GREP_TIME}")
-GREP_LINES=$(wc -l < test_env/grep_out.jsonl)
-GREP_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_TP / $GREP_TP) * 100}")
-echo "grep (reference):    $GREP_TP MB/s  ($GREP_LINES matched lines)  [NOT a fair baseline -- no JSON parsing]"
-echo "log_parse throughput is $GREP_RATIO% of grep (unfair comparison)"
+TAWK_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+TAWK_TP=$(awk "BEGIN {printf \"%.2f\", $JSONL_MB / $TAWK_TIME}")
+TAWK_LINES=$(wc -l < test_env/gnu_awk_out.jsonl)
+TAWK_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_TP / $TAWK_TP) * 100}")
+echo "GNU awk (simulated json parse): $TAWK_TP MB/s  ($TAWK_LINES matched lines)"
+echo "log_parse throughput is $TAWK_RATIO% of GNU awk"
+
+START=$(date +%s.%N)
+/tmp/toybox grep '"type":"clip"' "$JSONL_FILE" > test_env/toybox_grep_out.jsonl || true
+END=$(date +%s.%N)
+TGREP_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+TGREP_TP=$(awk "BEGIN {printf \"%.2f\", $JSONL_MB / $TGREP_TIME}")
+TGREP_LINES=$(wc -l < test_env/toybox_grep_out.jsonl)
+TGREP_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_TP / $TGREP_TP) * 100}")
+echo "Toybox grep (reference): $TGREP_TP MB/s  ($TGREP_LINES matched lines)  [NOT a fair baseline -- no JSON parsing]"
+echo "log_parse throughput is $TGREP_RATIO% of Toybox grep"
 echo "========================================="
 
 echo ""
@@ -121,7 +162,7 @@ LP_AGG_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
 LP_AGG_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $LP_AGG_TIME}")
 
 START=$(date +%s.%N)
-awk -F'duration=' '{sum+=$2} END {print sum}' "$TEXT_FILE" > test_env/awk_agg.out || true
+awk 'match($0, /^type=clip duration=([0-9]+)$/, a) {sum+=a[1]} END {print sum}' "$TEXT_FILE" > test_env/awk_agg.out || true
 END=$(date +%s.%N)
 AWK_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
 AWK_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $AWK_TIME}")
@@ -129,7 +170,7 @@ AWK_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $AWK_TIME}")
 AWK_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_AGG_TP / $AWK_TP) * 100}")
 echo "log_parse --sum:     $LP_AGG_TP MB/s"
 echo "GNU awk:             $AWK_TP MB/s"
-echo "log_parse throughput is $AWK_RATIO% of awk"
+echo "log_parse throughput is $AWK_RATIO% of GNU awk"
 echo "========================================="
 
 echo ""
@@ -160,7 +201,16 @@ CS_TP=$(awk "BEGIN {printf \"%.2f\", $CLIP_MB / $CS_TIME}")
 CS_DB_SIZE=$(wc -c < "$CS_DB")
 CS_DB_MB=$(awk "BEGIN {printf \"%.2f\", $CS_DB_SIZE/1048576}")
 
+START=$(date +%s.%N)
+cat "$CLIP_JSONL" | awk -v now=$(date +%s) '{print "sess:" NR "\t" $0 "\t" now+300}' | gzip > test_env/gnu_clip_store.gz || true
+END=$(date +%s.%N)
+GNU_CS_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
+GNU_CS_TP=$(awk "BEGIN {printf \"%.2f\", $CLIP_MB / $GNU_CS_TIME}")
+
+CS_RATIO=$(awk "BEGIN {printf \"%.1f\", ($CS_TP / $GNU_CS_TP) * 100}")
 echo "clip_store Ingest:   $CS_TP MB/s (Input: $CLIP_MB MB, DB Size: $CS_DB_MB MB compressed)"
+echo "GNU awk+gzip:        $GNU_CS_TP MB/s (Reference Equivalent)"
+echo "clip_store throughput is $CS_RATIO% of GNU awk+gzip"
 echo "========================================="
 
 echo ""

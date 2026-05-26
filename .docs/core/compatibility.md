@@ -3,8 +3,7 @@
 本文件說明三個 applet 與 GNU coreutils / Toybox 工具的 CLI 相容程度，
 並標示無直接對應工具的比較限制。
 
-測試環境：Ubuntu 22.04（GNU grep 3.7、GNU awk 5.1.0）；Toybox 未預裝，
-行為參照 [Toybox 原始碼與文件](https://landley.net/toybox/)。
+測試環境：Ubuntu 22.04（GNU grep、GNU awk）；Toybox 實際從官方取得 aarch64 binary 進行同機實測與對比（測試證據詳見 `./scripts/benchmark/run_all.sh`）。
 
 ---
 
