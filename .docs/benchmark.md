@@ -18,11 +18,11 @@
 # 1. 編譯專案
 make clean && make
 
-# 2. 執行自動化 Benchmark 腳本（涵蓋 Phase 1–4）
-./scripts/bench.sh
+# 2. 執行自動化 Benchmark 腳本（涵蓋 Phase 1–6）
+bash scripts/benchmark/run_all.sh
 ```
 
-腳本依序執行四個 Phase：
+腳本依序執行六個 Phase：
 
 * **Phase 1**：產生 small / medium / malformed 三種 binary dataset
 * **Phase 2**：`stream_merge` 獨立吞吐量基準
@@ -96,12 +96,12 @@ inotifywait -m -e modify "$src_dir/$session.meta.jsonl" \
 
 | 工具 | 指令 | Throughput | 匹配行數 | 備註 |
 | --- | --- | --- | --- | --- |
-| `log_parse` | `./.build/box log_parse --filter type=clip` | **~442 MB/s** | 10,000 | 語意正確 |
-| `jq` 1.7 | `jq -c 'select(.type == "clip")'` | **~57 MB/s** | 10,000 | 語意等同（主要比較對象） |
-| GNU `awk` | `awk -F...` (模擬 JSON 提取) | **~45 MB/s** | 10,000 | 語意等同 |
+| `log_parse` | `./.build/box log_parse --filter type=clip` | **~146 MB/s** | 10,000 | 語意正確，會回報 malformed JSON |
+| `jq` 1.7 | `jq -c 'select(.type == "clip")'` | **~73 MB/s** | 10,000 | 語意等同（主要比較對象） |
+| GNU `awk` | `awk -F...` (模擬 JSON 提取) | **~45 MB/s** | 10,000 | 啟發式欄位提取，非完整 JSON parser |
 | Toybox `grep` | `grep '"type":"clip"'` | **~116 MB/s** | 10,000 | **僅供參考，語意不等同** |
-| **比率（主）** | log_parse / jq | **~772%** | — | log_parse 顯著優於 jq |
-| 比率（參考） | log_parse / Toybox grep | **~381%** | — | **效能超越原生 Toybox grep！** |
+| **比率（主）** | log_parse / jq | **~199%** | — | 此資料集上 log_parse 約為 jq 2 倍 |
+| 比率（參考） | log_parse / Toybox grep | **~126%** | — | grep 不解析 JSON，僅列為 byte-scan 參考 |
 
 ### 效能分析
 
@@ -109,23 +109,27 @@ inotifywait -m -e modify "$src_dir/$session.meta.jsonl" \
 
 | 維度 | log_parse --filter | jq select() |
 | --- | --- | --- |
-| 解析方式 | 快速字串預篩選 + 手寫 C JSON 掃描 | 完整 jq DSL 直譯器 |
+| 解析方式 | 手寫 C JSON 掃描 | 完整 jq DSL 直譯器 |
 | 假陽性防範 | 是（精確 key=value 比對） | 是（AST 語意求值） |
 | 記憶體配置 | 固定 stack buffer，零 heap | 每行動態配置 jv 物件 |
 
-`log_parse` 吞吐量（~442 MB/s）為 `jq`（~57 MB/s）的 **772%**，並大幅超越原生 Toybox `grep` 的效能，徹底達成「嵌入式資源受限環境」的設計與最佳化目標。
+在本資料集上，`log_parse` 吞吐量高於 `jq select()`。此結果主要反映 `log_parse` 的問題域較窄：它只做固定 key/value 篩選，而 `jq` 是完整 JSON 查詢語言。Toybox `grep` 僅是 byte-level 參考，不能作為語意等同基準。
 
 ---
 
 ## Phase 4：log_parse 聚合統計 vs GNU awk
 
-**情境**：在 10 萬行文字紀錄中萃取 `duration` 數值並加總。
+**情境**：在 100 萬行文字紀錄中萃取 `duration` 數值並加總。腳本會執行 6 次，丟棄第 1 次 warm-up，再以 5 次樣本的 median/min/max 報告，降低單次計時與 cache 狀態造成的偏差。
 
 | 工具 | 指令 | Throughput | 備註 |
 | --- | --- | --- | --- |
-| `log_parse` | `./.build/box log_parse --regex ... --sum dur` | **~28 MB/s** | 包含正規表示式解析與提取 |
-| GNU `awk` | `awk 'match(...)'` (Regex 提取) | **~10 MB/s** | 使用 Regex 引擎做字串分割與加總 |
-| **比率** | log_parse / awk | **~278%** | 達成效能差距在 50% 以內之標準（實際上大幅超越原版工具） |
+| `log_parse` | `./.build/box log_parse --regex ... --sum dur` | **median ~29.49 MB/s** | POSIX regex 解析、欄位提取、數值加總 |
+| GNU `awk` 5.2.1 | `gawk 'match(...)'` | **median ~11.20 MB/s** | GNU awk regex match + interpreter loop |
+| **比率** | log_parse / gawk | **~263%** | 僅代表此 regex 聚合工作負載的同機量測結果 |
+
+### Phase 4 注意事項
+
+這個結果看起來很大，因此不能過度解讀成「log_parse 一般情況都比 awk 快 2.6 倍」。較合理的解讀是：在固定格式、每行都匹配、只萃取一個數字並加總的工作負載下，C 程式避免了 awk interpreter loop 與通用語言 runtime 的成本，因此 measured median 高於 gawk。若改成 awk 的 `-F'duration='` 字串分割，或資料格式更貼近 awk 擅長的 columnar text，結果可能不同。
 
 ---
 
@@ -172,7 +176,7 @@ box stream_merge bench_medium test_env
 1. **BusyBox 單一執行檔架構**：系統已經完整轉換為單一執行檔 `box` 的 BusyBox 軟連結分派架構，符合「與 Toybox/BusyBox 整合」的核心目標。
 2. **stream_merge**：領域特定工具，無 GNU 直接對應，效能基準以自身吞吐量（~500 MB/s）和記憶體足跡（O(1) bounded）為核心指標。
 3. **log_parse**：
-    * 語意等同的 JSON 比較對象是 `jq select()`（非 GNU coreutils），log_parse 吞吐量為 jq 的 **200%**。
-    * 針對數值聚合，與 GNU `awk` 進行比較，效能達到 `awk` 的 **~50%**，符合老師對標原版工具差距在 50% 內的嚴苛指標。
+    * 語意等同的 JSON 比較對象是 `jq select()`（非 GNU coreutils），同機測試中 log_parse 快於 jq；GNU/Toybox `grep` 僅能作為非語意等同的 byte-scan 參考。
+    * 針對 regex 數值聚合，與 GNU `awk` 5.2.1 的 `match(...)` 進行同機多次量測；目前 median 結果快於 gawk，但報告中應明確註明這只適用於該固定格式 workload。
 4. **clip_store**：寫入過程採用 zlib 壓縮及 Base64 轉換，達到極高的儲存空間效率。
 5. **End-to-End**：完整管線展示三個軟連結 applet 透過 UNIX pipe 組合的實際效能，符合設計要求。

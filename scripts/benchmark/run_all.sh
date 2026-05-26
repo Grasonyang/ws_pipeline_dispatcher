@@ -146,31 +146,55 @@ echo " Phase 4: log_parse aggregation vs awk"
 echo "========================================="
 echo "Generating text log dataset..."
 python3 -c '
-import random
 with open("test_env/bench_text.log", "w") as f:
-    for i in range(100000):
-        f.write(f"type=clip duration={random.randint(1, 100)}\n")
+    for i in range(1000000):
+        f.write(f"type=clip duration={(i % 100) + 1}\n")
 '
 TEXT_FILE=test_env/bench_text.log
 TEXT_SIZE=$(wc -c < "$TEXT_FILE")
 TEXT_MB=$(awk "BEGIN {printf \"%.2f\", $TEXT_SIZE/1048576}")
+AWK_BIN=$(command -v gawk || command -v awk)
+AWK_NAME=$($AWK_BIN --version 2>/dev/null | head -1 || echo "$AWK_BIN")
+LP_AGG_TPS=()
+AWK_TPS=()
 
-START=$(date +%s.%N)
-./.build/log_parse --regex '^type=clip duration=([0-9]+)$' --fields dur --sum dur < "$TEXT_FILE" > test_env/lp_agg.out || true
-END=$(date +%s.%N)
-LP_AGG_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
-LP_AGG_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $LP_AGG_TIME}")
+for run in 1 2 3 4 5 6; do
+    START=$(date +%s.%N)
+    ./.build/log_parse --regex '^type=clip duration=([0-9]+)$' --fields dur --sum dur < "$TEXT_FILE" > test_env/lp_agg.out || true
+    END=$(date +%s.%N)
+    LP_AGG_TIME=$(awk "BEGIN {printf \"%.6f\", $END - $START}")
+    LP_AGG_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $LP_AGG_TIME}")
 
-START=$(date +%s.%N)
-awk 'match($0, /^type=clip duration=([0-9]+)$/, a) {sum+=a[1]} END {print sum}' "$TEXT_FILE" > test_env/awk_agg.out || true
-END=$(date +%s.%N)
-AWK_TIME=$(awk "BEGIN {printf \"%.4f\", $END - $START}")
-AWK_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $AWK_TIME}")
+    START=$(date +%s.%N)
+    "$AWK_BIN" 'match($0, /^type=clip duration=([0-9]+)$/, a) {sum+=a[1]} END {print sum}' "$TEXT_FILE" > test_env/awk_agg.out || true
+    END=$(date +%s.%N)
+    AWK_TIME=$(awk "BEGIN {printf \"%.6f\", $END - $START}")
+    AWK_TP=$(awk "BEGIN {printf \"%.2f\", $TEXT_MB / $AWK_TIME}")
 
-AWK_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_AGG_TP / $AWK_TP) * 100}")
-echo "log_parse --sum:     $LP_AGG_TP MB/s"
-echo "GNU awk:             $AWK_TP MB/s"
-echo "log_parse throughput is $AWK_RATIO% of GNU awk"
+    # Discard the first run as warm-up to reduce cache/startup noise.
+    if [ "$run" -gt 1 ]; then
+        LP_AGG_TPS+=("$LP_AGG_TP")
+        AWK_TPS+=("$AWK_TP")
+    fi
+done
+
+summarize_tps() {
+    printf "%s\n" "$@" | sort -n | awk '
+        NR == 1 {min=$1}
+        {vals[NR]=$1; max=$1}
+        END {printf "median %.2f MB/s (min %.2f, max %.2f)", vals[int((NR + 1) / 2)], min, max}
+    '
+}
+
+LP_AGG_MEDIAN=$(printf "%s\n" "${LP_AGG_TPS[@]}" | sort -n | awk 'END {print vals[int((NR + 1) / 2)]} {vals[NR]=$1}')
+AWK_MEDIAN=$(printf "%s\n" "${AWK_TPS[@]}" | sort -n | awk 'END {print vals[int((NR + 1) / 2)]} {vals[NR]=$1}')
+AWK_RATIO=$(awk "BEGIN {printf \"%.1f\", ($LP_AGG_MEDIAN / $AWK_MEDIAN) * 100}")
+echo "Input:               $TEXT_MB MB (1,000,000 records)"
+echo "Samples:             5 measured runs after 1 warm-up run"
+echo "log_parse --sum:     $(summarize_tps "${LP_AGG_TPS[@]}")"
+echo "GNU awk:             $(summarize_tps "${AWK_TPS[@]}")"
+echo "awk implementation:  $AWK_NAME"
+echo "Median throughput:   log_parse is $AWK_RATIO% of GNU awk"
 echo "========================================="
 
 echo ""

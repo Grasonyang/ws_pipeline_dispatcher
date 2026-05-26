@@ -172,21 +172,35 @@ cat /tmp/udp_demo/clips.db
 ```text
 .
 |-- applets/
+|   |-- main.c                  # BusyBox-style dispatcher entrypoint
 |   |-- pipeline_dispatcher/    # fork + pipe + exec orchestration
 |   |-- stream_merge/           # sidecar-driven clip metadata emitter
 |   |-- log_parse/              # regex parser, JSON/CSV formatter, record filter
 |   `-- clip_store/             # file-backed clip index
 |-- lib/
-|   |-- libpipeline.{h,c}       # inotify, monotonic time, buffer, sentinel helpers
-|   `-- stream_logger.{h,c}     # stderr-only diagnostic logger
+|   |-- libpipeline.{h,c}       # inotify, monotonic time, sentinel helpers
+|   |-- stream_logger.{h,c}     # stderr-only diagnostic logger
+|   |-- dynamic_buffer.{h,c}    # resizable buffer utilities
+|   |-- jsonl_codec.{h,c}       # JSON Lines encode/decode helpers
+|   `-- base64.{h,c}            # Base64 codec used by clip_store
 |-- man/
+|   |-- pipeline_dispatcher.1   # man page: pipeline_dispatcher
 |   |-- stream_merge.1          # man page: stream_merge
 |   |-- log_parse.1             # man page: log_parse
 |   `-- clip_store.1            # man page: clip_store
-|-- tests/                      # C unit tests and shell integration tests
-|-- .docs/                      # repo-local implementation and design docs
-|   |-- core/                   # project overview and compliance summary
-|   |-- applets/                # per-applet behavior docs
+|-- tests/
+|   |-- lib/                    # shared-library unit tests
+|   |-- applets/                # per-applet unit tests
+|   `-- test_*.sh               # shell integration tests
+|-- scripts/
+|   |-- applets_pipeline_examples/ # runnable example scripts per applet
+|   |-- benchmark/              # benchmark entrypoints
+|   |-- udp_stream_data_*.sh    # upstream ingestor demo scripts
+|   `-- gen_data.py             # synthetic data generator
+|-- .docs/
+|   |-- core/                   # overview, compliance, compatibility
+|   `-- applets/                # per-applet behavior docs
+|-- .third-party/               # vendored cJSON and miniz
 `-- Makefile
 ```
 
