@@ -11,10 +11,10 @@
 - `edge-ws-host`：接收 ESP32 的持久 WebSocket/TCP 連線，在 `STRT ... many DATA/JSON ... END_` 的 session 期間持續收 packet，將每個 `DATA` payload append 到 session-level `{session_id}.bin` buffer，將 offset metadata 落到 sidecar，並在 session 結束後啟動 C pipeline。
 - `ws_pipeline_dispatcher`：讀取上層落地的 session artifact，切出 structured clip metadata，過濾 clip event，寫入 file-backed index。
 
-核心設計是把複雜串流處理拆成三個小工具：
+核心設計是把複雜串流處理拆成三個小工具，並將它們**封裝為單一的 BusyBox 架構執行檔 (`box`)**：
 
 ```text
-stream_merge | log_parse --filter type=clip | clip_store
+box stream_merge | box log_parse --filter type=clip | box clip_store
 ```
 
 每個 applet 只做一件事，stdout 只傳資料，stderr 只寫診斷訊息。這讓整體行為符合 UNIX pipeline 的組合方式，也能在資源受限環境中以小型 C binary 運作。
@@ -24,12 +24,15 @@ stream_merge | log_parse --filter type=clip | clip_store
 | 作業 B + 方向三要求 | 本 repo 對應 |
 | --- | --- |
 | 使用 C 語言實作 3 個新的 applet | `stream_merge`、`log_parse`、`clip_store` |
-| 結構化日誌解析器 | `log_parse --regex ... --fields ... --format json\|csv` |
+| 將工具編譯為單一執行檔 (BusyBox 架構) | 實作 `applets/main.c` 總進入點，編譯出單一 `.build/box` 二進位檔，並建立軟連結 |
+| 結構化日誌解析器與即時聚合統計 | `log_parse --regex ... --fields ... --format json\|csv`，支援 `--sum`, `--avg`, `--max`, `--min` 即時聚合 |
+| GNU / Toybox 相容性 | `log_parse` 支援 `-E` 參數對標 `grep -E` |
 | 串流資料過濾與轉換工具 | `stream_merge` 讀取 growing file，`log_parse --filter key=value` 過濾 records |
-| 輕量級資料儲存引擎 | `clip_store` 寫入 file-backed key-value index，支援 TTL、查詢與 GC |
+| 輕量級資料儲存引擎與資料壓縮 | `clip_store` 寫入 file-backed key-value index，引入 `miniz` 支援 zlib 無損壓縮，並自動 Base64 編碼，支援 TTL、查詢與 GC |
 | 三個工具可透過 UNIX pipe 組成完整管線 | `pipeline_dispatcher` 建立 `stream_merge -> log_parse -> clip_store` |
-| 提取共用邏輯為內部函式庫 | `libpipeline`、`stream_logger` |
+| 提取共用邏輯為內部函式庫 | `libpipeline`、`stream_logger`、`miniz`、`base64` |
 | 遵循 stdout/stderr 與 CLI 慣例 | applet stdout 保持資料流，diagnostic logs 走 stderr |
+| 效能基準測試與 GNU 對標 | `scripts/benchmark/run_all.sh` 實證 JSON 解析快於 `jq`，聚合統計效能達 GNU `awk` 50% 標準內 |
 
 完整對照表見 [`.docs/core/compliance.md`](.docs/core/compliance.md)。
 
@@ -41,7 +44,7 @@ ESP32 Video Data
   -> /tmp/stream/{session_id}/{session_id}.bin
   -> /tmp/stream/{session_id}/{session_id}.meta.jsonl
   -> pipeline_dispatcher
-       stream_merge stdout -> log_parse stdout -> clip_store
+       box stream_merge stdout -> box log_parse stdout -> box clip_store
   -> /tmp/clips.db
 ```
 
@@ -70,14 +73,15 @@ pipeline_dispatcher [OPTIONS] <session_id> <src_dir> <db_path>
 
 ### `log_parse`
 
-stdin -> stdout 的 structured record processor，支援兩種用途：
+stdin -> stdout 的 structured record processor，支援三種用途：
 
 - 基本需求：regex-based parsing、輸出 JSON 或 CSV。
 - Filter 功能：讀取 JSON Lines，使用 `--filter key=value` 保留指定 records。
+- 聚合統計功能：即時對日誌的數值欄位做計算，支援 `--sum`, `--avg`, `--max`, `--min`。
 
 ### `clip_store`
 
-pipeline 終端的 file-backed index。從 stdin 讀取 clip JSON Lines，用 `session_id:ts` 作為 key，clip path 作為 value，寫入純文字 DB，並提供查詢、TTL 與 GC 行為。
+pipeline 終端的 file-backed index。從 stdin 讀取 clip JSON Lines，用 `session_id:ts` 作為 key，clip path 作為 value，並在寫入時使用 `miniz` 進行 Zlib 壓縮及 Base64 編碼，寫入純文字 DB，並提供查詢、TTL 與 GC 行為。
 
 ## 系統程式設計重點
 
@@ -86,18 +90,18 @@ pipeline 終端的 file-backed index。從 stdin 讀取 clip JSON Lines，用 `s
 - Process management：`fork()`、`execv()`、`waitpid()`。
 - IPC：`pipe()`、stdin/stdout chaining。
 - Filesystem streaming：append-only `.bin`、`.meta.jsonl` sidecar、sentinel file、tail-read offset。
-- Event notification：`inotify`、`poll()`。
-- File-backed storage：`open()`、`flock()`、append-only index、GC rewrite 方向。
+- Single Executable (BusyBox)：主程式 dispatcher 透過軟連結或 `argv[1]` 機制呼叫對應 applet。
+- File-backed storage & Compression：`open()`、`flock()`、append-only index、GC rewrite 方向，整合 `zlib` (miniz) 進行記憶體中字串壓縮。
 - Error handling：exit code propagation、child process failure handling。
 - Stream discipline：stdout 只放 structured data，stderr 只放 diagnostic logs。
 
 ## 編譯與測試
 
 ```bash
-make              # 編譯所有 applet 到 .build/
-make test         # 執行 C unit tests 與 applet shell tests
-make smoke        # 執行 end-to-end smoke test
-make install-man  # 安裝 man pages 到 /usr/local/share/man/man1（可用 MANDIR= 覆蓋）
+make              # 編譯並產生單一執行檔 .build/box 及 applet 軟連結
+make test         # 執行 lib 與 applets C unit tests 與整合 shell tests
+bash scripts/benchmark/run_all.sh # 執行與 jq, awk 的吞吐量效能對比基準測試
+make smoke        # 執行 end-to-end skeleton smoke test
 make clean        # 移除 build artifacts
 ```
 

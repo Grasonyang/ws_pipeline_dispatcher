@@ -1,15 +1,15 @@
 # clip_store
 
-`clip_store` 是 pipeline 終端的 file-backed clip index。它從 stdin 接收 clip JSON Lines，寫入 append-only 純文字 DB，並提供查詢、TTL、delete tombstone 與 compact/GC。
+`clip_store` 是 pipeline 終端的 file-backed clip index。它從 stdin 接收 clip JSON Lines，進行 **Zlib 無損壓縮與 Base64 編碼**後寫入 append-only 純文字 DB，並提供查詢、TTL、delete tombstone 與 compact/GC。
 
 ## DB Format
 
 ```text
-key<TAB>value<TAB>expire_at<NEWLINE>
+key<TAB>Z:base64_compressed_value<TAB>expire_at<NEWLINE>
 ```
 
 - `key`：預設為 `session_id:ts`。
-- `value`：clip path/reference，目前由 input JSON 的 `path` 欄位提供。
+- `value`：儲存時會加上 `Z:` 前綴，代表它被 `miniz` (zlib) 壓縮並轉換為 Base64 格式。讀取時會自動反向解碼與解壓縮。
 - `expire_at=0`：永不過期。
 
 ## Commands
@@ -40,7 +40,7 @@ clip_store --db <path> --gc
 ## Pipeline 用法
 
 ```text
-stream_merge ... | log_parse --filter type=clip | clip_store --db clips.db --ttl 300
+box stream_merge ... | box log_parse --filter type=clip | box clip_store --db clips.db --ttl 300
 ```
 
 `clip_store` 只儲存 metadata reference，不負責讀取或轉換 `.bin` media bytes。

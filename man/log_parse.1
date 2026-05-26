@@ -9,6 +9,15 @@ log_parse \- lightweight structured record processor for UNIX pipelines
 .IR fields ]
 .RB [ \-\-format
 .IR fmt ]
+.RB [ \-\-sum
+.IR field ]
+.RB [ \-\-avg
+.IR field ]
+.RB [ \-\-max
+.IR field ]
+.RB [ \-\-min
+.IR field ]
+.RB [ \-E ]
 .br
 .B log_parse
 .RB [ \-f
@@ -31,7 +40,11 @@ flat field matches a given value (\fB\-\-filter\fR).
 Supports string, number, and boolean field comparisons.
 .RE
 .PP
-All diagnostic output is written to stderr; stdout carries data only.
+.B Aggregation mode
+.RS
+Reads parsed or filtered JSON records and calculates statistics (sum, avg, max, min)
+for a specified numeric \fIfield\fR in real-time, emitting the final result upon EOF.
+.RE
 .SH OPTIONS
 .TP
 .BI \-r ", " \-\-regex " pattern"
@@ -53,6 +66,21 @@ Cannot be combined with \fB\-\-regex\fR.
 .BI \-\-format " fmt"
 Set output format for parse mode.
 Accepted values: \fBjson\fR (default), \fBcsv\fR.
+.TP
+.BI \-\-sum " field"
+Calculate the sum of all numeric values found in \fIfield\fR.
+.TP
+.BI \-\-avg " field"
+Calculate the average of all numeric values found in \fIfield\fR.
+.TP
+.BI \-\-max " field"
+Find the maximum numeric value in \fIfield\fR.
+.TP
+.BI \-\-min " field"
+Find the minimum numeric value in \fIfield\fR.
+.TP
+.B \-E
+Compatibility flag (ignored). Extended regex is always used.
 .TP
 .BR \-h ", " \-\-help
 Print a usage summary to stdout and exit with status 0.
@@ -93,13 +121,23 @@ cat events.jsonl | log_parse --filter type=clip
 .fi
 .RE
 .PP
+Compute total duration of all clips from log lines:
+.PP
+.RS
+.nf
+cat app.log | \e
+  log_parse --regex '^type=clip duration=([0-9]+)$' \e
+            --fields dur --sum dur
+.fi
+.RE
+.PP
 Middle stage of the full pipeline:
 .PP
 .RS
 .nf
-stream_merge sess01 /tmp/stream \e
-  | log_parse --filter type=clip \e
-  | clip_store --db /var/db/clips.db
+box stream_merge sess01 /tmp/stream \e
+  | box log_parse --filter type=clip \e
+  | box clip_store --db /var/db/clips.db
 .fi
 .RE
 .SH SEE ALSO

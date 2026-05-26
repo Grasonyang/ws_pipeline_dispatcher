@@ -18,18 +18,18 @@
 ## Pipeline
 
 ```text
-pipeline_dispatcher
-  -> stream_merge
-  -> log_parse --filter type=clip
-  -> clip_store
+box pipeline_dispatcher
+  -> box stream_merge
+  -> box log_parse --filter type=clip
+  -> box clip_store
 ```
 
 ## 職責
 
-- `pipeline_dispatcher`：驗證 session artifact、解析 CLI options、fork、pipe、exec、waitpid、signal cleanup。
+- `pipeline_dispatcher`：驗證 session artifact、解析 CLI options、fork、pipe、exec 軟連結 (`box`)、waitpid、signal cleanup。
 - `stream_merge`：讀 sidecar，做時間窗與 gap-aware continuity 檢查，輸出 clip metadata。
-- `log_parse`：解析 structured logs，或過濾 JSONL records。
-- `clip_store`：寫入純文字 clip index，支援 TTL、查詢、GC/compact。
+- `log_parse`：解析 structured logs、過濾 JSONL records，並支援即時聚合統計 (`--sum`, `--avg`, `--min`, `--max`)。
+- `clip_store`：支援資料 Zlib 無損壓縮與 Base64 編解碼，寫入純文字 clip index，支援 TTL、查詢、GC/compact。
 
 ## Non-Goals
 

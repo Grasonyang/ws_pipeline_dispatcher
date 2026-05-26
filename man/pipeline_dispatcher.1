@@ -6,11 +6,11 @@ pipeline_dispatcher \- build and supervise the stream data applet pipeline
 [IOPTIONSR] Isession_idR Isrc_dirR Idb_pathR
 .SH DESCRIPTION
 Bpipeline_dispatcherR validates one file-backed session and starts the
-three-stage UNIX pipeline:
+three-stage UNIX pipeline using the BusyBox-style single executable (BboxR):
 .PP
 .RS
 .nf
-stream_merge | log_parse --filter type=clip | clip_store
+box stream_merge | box log_parse --filter type=clip | box clip_store
 .fi
 .RE
 .PP
@@ -64,7 +64,7 @@ Interrupted by SIGINT or SIGTERM after child cleanup.
 .PP
 .RS
 .nf
-pipeline_dispatcher --ttl 300 --clip-secs 5 demo /tmp/stream/demo /tmp/clips.db
+box pipeline_dispatcher --ttl 300 --clip-secs 5 demo /tmp/stream/demo /tmp/clips.db
 .fi
 .RE
 .SH SEE ALSO

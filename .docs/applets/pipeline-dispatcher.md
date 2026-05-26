@@ -1,11 +1,11 @@
 # pipeline_dispatcher
 
-`pipeline_dispatcher` 是本 repo 的 process orchestrator。它不處理 UDP/RTP、不解析 binary payload，也不直接操作 clip JSON；它只負責驗證 session artifact，並建立三段 UNIX pipeline：
+`pipeline_dispatcher` 是本 repo 的 process orchestrator。它不處理 UDP/RTP、不解析 binary payload，也不直接操作 clip JSON；它只負責驗證 session artifact，並透過 **BusyBox 單一執行檔架構 (`box`)** 建立三段 UNIX pipeline：
 
 ```text
-stream_merge --clip-secs N --idle-secs M <session_id> <src_dir>
-  | log_parse --filter <expr>
-  | clip_store --db <db_path> --ttl <seconds>
+box stream_merge --clip-secs N --idle-secs M <session_id> <src_dir>
+  | box log_parse --filter <expr>
+  | box clip_store --db <db_path> --ttl <seconds>
 ```
 
 ## CLI
@@ -29,7 +29,7 @@ Options:
 `pipeline_dispatcher` 負責：
 
 - 驗證 `session_id`、`src_dir`、`db_path` 與數字參數。
-- 從自身 executable 位置解析 sibling applets：`stream_merge`、`log_parse`、`clip_store`。
+- 從自身 executable 位置解析 sibling applets (透過 `box` 軟連結)：`stream_merge`、`log_parse`、`clip_store`。
 - 建立兩條 pipe。
 - `fork()` / `execv()` 三個 child process。
 - 關閉 parent/child 中不需要的 pipe fd。

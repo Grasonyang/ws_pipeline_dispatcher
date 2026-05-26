@@ -1,18 +1,32 @@
 # log_parse
 
-`log_parse` 是 stdin -> stdout 的 structured record processor。它支援 regex 欄位提取、JSONL filter，以及輕量 count mode。
+`log_parse` 是 stdin -> stdout 的 structured record processor。它支援 regex 欄位提取、JSONL filter、即時聚合統計，以及輕量 count mode。
 
 ## Parse Mode
 
 ```text
-log_parse --regex <pattern> --fields a,b,c --format json|csv
+log_parse --regex <pattern> --fields a,b,c --format json|csv [-E]
 ```
 
 - 從 stdin 逐行讀取。
-- 使用 POSIX extended regex。
+- 使用 POSIX extended regex (支援 `-E` 參數相容 GNU grep)。
 - 將 capture groups 依序映射到 `--fields` 欄位名。
 - 對 stdout 輸出 JSON Lines 或 CSV。
 - regex capture value 一律視為字串。
+
+## Aggregation (統計) Mode
+
+即時計算並輸出單一浮點數值：
+
+```text
+log_parse --sum <field>
+log_parse --avg <field>
+log_parse --max <field>
+log_parse --min <field>
+```
+
+- 適用於過濾後的 JSONL 或是被 `--regex` 提取出的字串欄位。
+- 在檔案/串流結束後，對 stdout 輸出計算結果（保留小數點後兩位）。
 
 ## Filter Mode
 

@@ -27,13 +27,13 @@ The database format is tab-delimited:
 .PP
 .RS
 .nf
-<key>\\t<value>\\t<expire_at>\\n
+<key>\\tZ:<base64_encoded_zlib_data>\\t<expire_at>\\n
 .fi
 .RE
 .PP
-Where \fIkey\fR is \fIsession_id\fB:\fIts\fR, \fIvalue\fR is the clip path
-extracted from the input JSON, and \fIexpire_at\fR is a Unix timestamp
-(0 = never expires).
+Where \fIkey\fR is \fIsession_id\fB:\fIts\fR, \fIvalue\fR is the clip JSON payload
+compressed with zlib and encoded to Base64, and \fIexpire_at\fR is a Unix timestamp
+(0 = never expires). Decompression is handled transparently on read.
 .PP
 File locking (\fBflock\fR(2)) is held on all write paths, allowing multiple
 concurrent writers without corruption.
@@ -107,13 +107,13 @@ clip_store --db /var/db/clips.db --gc
 .fi
 .RE
 .PP
-Final stage of the full pipeline:
+Final stage of the full pipeline (using BusyBox style):
 .PP
 .RS
 .nf
-stream_merge sess01 /tmp/stream \e
-  | log_parse --filter type=clip \e
-  | clip_store --db /var/db/clips.db --ttl 3600
+box stream_merge sess01 /tmp/stream \e
+  | box log_parse --filter type=clip \e
+  | box clip_store --db /var/db/clips.db --ttl 3600
 .fi
 .RE
 .SH SEE ALSO
