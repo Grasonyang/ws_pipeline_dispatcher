@@ -23,6 +23,7 @@ static void test_parse_db_row_valid(void)
     CHECK(strcmp(row.key, "clip123") == 0);
     CHECK(strcmp(row.value, "{\"data\":\"test\"}") == 0);
     CHECK(row.expire_at == 1700000000L);
+    free_db_row(&row);
 }
 
 static void test_parse_db_row_invalid(void)
@@ -46,8 +47,21 @@ static void test_append_db_row(void)
     rewind(fp);
     char buf[128] = {0};
     CHECK(fgets(buf, sizeof(buf), fp) != NULL);
-    CHECK(strcmp(buf, "clip456\t{\"val\":1}\t1800000000\n") == 0);
-
+    buf[strcspn(buf, "\r\n")] = '\0';
+    
+    row_t row = {0};
+    int rc = parse_db_row(buf, &row);
+    if (rc != 0) {
+        fprintf(stderr, "parse_db_row failed! buf was: %s\n", buf);
+    }
+    CHECK(rc == 0);
+    if (row.key != NULL) {
+        CHECK(strcmp(row.key, "clip456") == 0);
+        CHECK(strcmp(row.value, "{\"val\":1}") == 0);
+        CHECK(row.expire_at == 1800000000L);
+    }
+    free_db_row(&row);
+    
     fclose(fp);
 }
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PIPELINE_DISPATCHER=$(realpath "${PIPELINE_DISPATCHER:-./.build/pipeline_dispatcher}")
+PIPELINE_DISPATCHER="${PIPELINE_DISPATCHER:-./.build/pipeline_dispatcher}"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 

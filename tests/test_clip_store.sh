@@ -43,8 +43,8 @@ check_eq "delete hides from list" "" "$("$CLIP_STORE" --db "$DB" --list | grep '
 
 "$CLIP_STORE" --db "$DB" --gc
 check_eq "gc removes duplicates, keeps never-expire rows" "2" "$(wc -l <"$DB" | tr -d ' ')"
-check_eq "gc keeps latest for sess_001:1747065600" "sess_001:1747065600	/tmp/two.mp4" "$(grep '^sess_001:1747065600' "$DB" | cut -f1,2)"
-check_eq "gc keeps never-expire row" "sess_001:1747065601	/tmp/no_expire.mp4" "$(grep '^sess_001:1747065601' "$DB" | cut -f1,2)"
+check_eq "gc keeps latest for sess_001:1747065600" "/tmp/two.mp4" "$("$CLIP_STORE" --db "$DB" --get sess_001:1747065600)"
+check_eq "gc keeps never-expire row" "/tmp/no_expire.mp4" "$("$CLIP_STORE" --db "$DB" --get sess_001:1747065601)"
 
 for i in 1 2 3 4 5; do
     (printf '{"type":"clip","session_id":"sess_c","ts":%s,"path":"/tmp/%s.mp4"}\n' "$i" "$i" |

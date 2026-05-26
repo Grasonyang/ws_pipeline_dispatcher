@@ -65,6 +65,7 @@ static void test_rewrite_compact(void)
         CHECK(strcmp(r.key, "k1") != 0);
         CHECK(strcmp(r.key, "k4") != 0);
         count++;
+        free_db_row(&r);
     }
     
     CHECK(count == 3);
